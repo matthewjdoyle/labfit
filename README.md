@@ -3,7 +3,6 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/matthewjdoyle/labfit/actions/workflows/ci.yml"><img src="https://github.com/matthewjdoyle/labfit/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://matthewd0yle.com/labfit/"><strong>Documentation</strong></a> ·
   <a href="#quick-start"><strong>Quick start</strong></a> ·
   <a href="https://matthewd0yle.com/labfit/gallery.html"><strong>Gallery</strong></a>
@@ -63,5 +62,3 @@ plot.save("gaussian_fit.png")
 
 - Python ≥ 3.10
 - NumPy, SciPy, Matplotlib
-
-## License
