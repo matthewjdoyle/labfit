@@ -49,37 +49,21 @@ Core goals:
 
    <div class="grid-links">
 
-- **5-minute quickstart** - Get a working fit in 5 minutes: CSV, errors, fit, plot, χ².
+- **5-minute quickstart** - Get a working fit in 5 minutes: CSV, errors, fit, plot, χ².  :ref:`quickstart`
 
-  :ref:`quickstart`
+- **Concepts** - Diagnostics, reduced χ², and error propagation. :ref:`concepts`
 
-- **Concepts** - Diagnostics, reduced χ², and error propagation explained.
+- **How least-squares works** - What residuals, χ² surfaces, and optimisers actually do. :ref:`least-squares`
 
-  :ref:`concepts`
+- **Fitting functions** - All fitting entry points and built-in fitting models. :ref:`fitting-functions`
 
-- **How least-squares works** - What residuals, χ² surfaces, and optimisers actually do, with pictures.
+- **API Reference** - :ref:`api`
 
-  :ref:`least-squares`
+- **Utilities** - CSV/TXT loading and uncertainty helpers. :ref:`utilities`
 
-- **Fitting functions** - All fitting entry points, built-in models, and plotting helpers in one place.
+- **Example gallery** - Simple examples. :ref:`gallery`
 
-  :ref:`fitting-functions`
-
-- **API Reference** - Complete listing of public classes and result containers.
-
-  :ref:`api`
-
-- **Utilities** - CSV/TXT loading and uncertainty helpers.
-
-  :ref:`utilities`
-
-- **Example gallery** - Copy-and-paste examples with generated output plots.
-
-  :ref:`gallery`
-
-- **FAQ** - Common pitfalls: correlated errors, bad initial guesses, weighting, and more.
-
-  :ref:`faq`
+- **FAQ** - Common pitfalls: correlated errors, bad initial guesses, weighting, and more. :ref:`faq`
 
 .. raw:: html
 
