@@ -49,35 +49,19 @@ Core goals:
 
    <div class="grid-links">
 
-- **5-minute quickstart** - Get a working fit in 5 minutes: CSV, errors, fit, plot, χ².
-
   :ref:`quickstart`
-
-- **Concepts** - Diagnostics, reduced χ², and error propagation explained.
 
   :ref:`concepts`
 
-- **How least-squares works** - What residuals, χ² surfaces, and optimisers actually do, with pictures.
-
   :ref:`least-squares`
-
-- **Fitting functions** - All fitting entry points, built-in models, and plotting helpers in one place.
 
   :ref:`fitting-functions`
 
-- **API Reference** - Complete listing of public classes and result containers.
-
   :ref:`api`
-
-- **Utilities** - CSV/TXT loading and uncertainty helpers.
 
   :ref:`utilities`
 
-- **Example gallery** - Copy-and-paste examples with generated output plots.
-
   :ref:`gallery`
-
-- **FAQ** - Common pitfalls: correlated errors, bad initial guesses, weighting, and more.
 
   :ref:`faq`
 
