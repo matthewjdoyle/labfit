@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/matthewjdoyle/labfit/main/docs/_static/banner.svg" alt="LabFit - least-squares curve fitting for Python" width="100%">
+  <img src="https://raw.githubusercontent.com/matthewjdoyle/labfit/master/docs/_static/banner.svg" alt="LabFit - least-squares curve fitting for Python" width="100%">
 </p>
 
 <p align="center">
