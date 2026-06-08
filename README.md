@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://matthewd0yle.com/labfit/"><strong>Documentation</strong></a> ·
-  <a href="#quick-start"><strong>Quick start</strong></a> ·
+  <a href="https://github.com/matthewjdoyle/labfit"><strong>GitHub</strong></a> ·
   <a href="https://matthewd0yle.com/labfit/gallery.html"><strong>Gallery</strong></a>
 </p>
 
