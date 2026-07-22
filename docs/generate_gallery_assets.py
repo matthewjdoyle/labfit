@@ -153,6 +153,42 @@ def make_subset_fit() -> None:
     save_plot(plot, "subset_fit")
 
 
+def make_model_comparison() -> None:
+    """Fit the same data with a Gaussian (correct) and a Lorentzian (close but wrong).
+
+    Both fit lines are overlaid on a single axis so the tail mismatch is
+    immediately visible.  The reduced chi-squared values quantify what the
+    eye sees: the Gaussian matches the data, the Lorentzian does not.
+    """
+    rng = np.random.default_rng(20260620)
+    x = np.linspace(-4.0, 8.0, 200)
+    y_true = 5.0 * np.exp(-0.5 * ((x - 2.0) / 1.0) ** 2)
+    sigma = np.full_like(x, 0.08)
+    y = y_true + rng.normal(0.0, sigma)
+
+    result_gaussian = fit(x, y, model="gaussian", sigma=sigma, label="data")
+    result_lorentzian = fit(x, y, model="lorentzian", sigma=sigma)
+
+    # Avoid plotting the data markers twice — only the Gaussian result
+    # carries the series so the data points appear once.
+    result_lorentzian.series = None
+
+    plot = plot_fit(
+        [result_gaussian, result_lorentzian],
+        show_residuals=False,
+        title="Gaussian vs Lorentzian model comparison",
+        xlabel="position",
+        ylabel="intensity",
+    )
+    save_plot(plot, "model_comparison")
+
+    print("=== Gaussian (correct model) ===")
+    print(result_gaussian)
+    print()
+    print("=== Lorentzian (close but wrong) ===")
+    print(result_lorentzian)
+
+
 if __name__ == "__main__":
     make_linear_fit()
     make_gaussian_fit()
@@ -160,4 +196,5 @@ if __name__ == "__main__":
     make_bimodal_gaussian()
     make_exponential_fit()
     make_subset_fit()
+    make_model_comparison()
     print(f"Wrote gallery assets to {OUT}")

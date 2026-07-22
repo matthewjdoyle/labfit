@@ -263,3 +263,77 @@ Subset fit console output
    mean = 5.010007 ± 0.001580
    sigma = 0.791448 ± 0.001760
    reduced chi^2 = 0.805082
+
+Comparing two models on the same data
+--------------------------------------
+
+Sometimes you are not sure which model is the right one. Fit the data with
+both and overlay the results on a single plot — the eye catches tail
+mismatches, and the reduced χ² confirms what you see.
+
+Here the data comes from a Gaussian peak. The Gaussian fit (orange) recovers
+the parameters with χ² ≈ 1. The Lorentzian fit (green) is close near the
+centre but its heavier tails diverge from the data in the wings, giving
+χ² ≈ 17.
+
+.. code-block:: python
+
+   import numpy as np
+   from labfit import fit, plot_fit
+
+   rng = np.random.default_rng(20260620)
+   x = np.linspace(-4.0, 8.0, 200)
+   y_true = 5.0 * np.exp(-0.5 * ((x - 2.0) / 1.0) ** 2)
+   sigma = np.full_like(x, 0.08)
+   y = y_true + rng.normal(0.0, sigma)
+
+   # Correct model
+   result_gaussian = fit(x, y, model="gaussian", sigma=sigma, label="data")
+
+   # Close but wrong — Lorentzian has heavier tails
+   result_lorentzian = fit(x, y, model="lorentzian", sigma=sigma)
+
+   # Prevent the data markers from being drawn twice — only the
+   # Gaussian result carries the series so the points appear once.
+   result_lorentzian.series = None
+
+   plot = plot_fit(
+       [result_gaussian, result_lorentzian],
+       show_residuals=False,
+       title="Gaussian vs Lorentzian model comparison",
+       xlabel="position",
+       ylabel="intensity",
+   )
+   plot.save("docs/_static/gallery/model_comparison.png")
+
+.. figure:: _static/gallery/model_comparison.png
+   :alt: Gaussian vs Lorentzian model comparison on a single axis
+   :width: 100%
+
+   Both fit lines are drawn on the same axis. The Gaussian (orange) matches
+   the data; the Lorentzian (green) deviates in the tails. The reduced χ²
+   quantifies the difference: 1.07 vs 17.2.
+
+Gaussian (correct model) console output
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: console
+
+   FitResult: gaussian
+     amplitude = 5.0018 +/- 0.018636
+     mean = 1.9985 +/- 0.004314
+     sigma = 1.0027 +/- 0.004314
+     reduced chi2 = 1.066
+     p = 0.249
+
+Lorentzian (close but wrong) console output
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: console
+
+   FitResult: lorentzian
+     amplitude = 5.4251 +/- 0.095026
+     center = 1.9966 +/- 0.016386
+     gamma = 0.93677 +/- 0.023328
+     reduced chi2 = 17.16  -- model may be wrong or errors underestimated
+     p ~ 0.0e+00
