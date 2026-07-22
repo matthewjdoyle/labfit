@@ -8,11 +8,7 @@ from labfit.types import DataSeries, Dataset
 
 def test_csv_and_txt_loaders_infer_errors_and_stack_series(tmp_path: Path):
     csv = tmp_path / "sample.csv"
-    csv.write_text(
-        "time,count,sigma_low,sigma_high\n"
-        "0,1,0.1,0.2\n"
-        "1,4,0.2,0.3\n"
-    )
+    csv.write_text("time,count,sigma_low,sigma_high\n0,1,0.1,0.2\n1,4,0.2,0.3\n")
     csv_series = load_csv(csv, "time", "count")
     assert isinstance(csv_series, DataSeries)
     assert np.allclose(csv_series.x, [0.0, 1.0])
@@ -22,11 +18,7 @@ def test_csv_and_txt_loaders_infer_errors_and_stack_series(tmp_path: Path):
     assert np.allclose(csv_series.y_err, [1.0, 2.0])
 
     txt = tmp_path / "sample.txt"
-    txt.write_text(
-        "x intensity\n"
-        "0 10\n"
-        "1 12.5\n"
-    )
+    txt.write_text("x intensity\n0 10\n1 12.5\n")
     txt_series = load_txt(txt, "x", "intensity")
     assert np.allclose(txt_series.x, [0.0, 1.0])
     assert np.allclose(txt_series.y, [10.0, 12.5])

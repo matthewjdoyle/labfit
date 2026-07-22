@@ -198,131 +198,9 @@ CSV could also be loaded with \texttt{numpy.loadtxt} or \texttt{pandas.read\_csv
 \end{frame}
 
 % =============================================================================
-% SLIDE 5 --- Custom two-Gaussian model
+% SLIDE 5 --- Separate single-Gaussian fits
 % =============================================================================
-\begin{frame}[fragile]{Step 3: Define a custom two-Gaussian model}
-
-For overlapping peaks, write a model function or use the built-in equation:
-
-\[
-I(\lambda) = A_1 e^{-(\lambda-\mu_1)^2/2\sigma_1^2}
-           + A_2 e^{-(\lambda-\mu_2)^2/2\sigma_2^2}
-           + m\lambda + b
-\]
-
-\begin{lstlisting}[style=pysmall]
-def two_gaussians_baseline(x, a1, m1, s1, a2, m2, s2, m, b):
-    g1 = a1 * np.exp(-0.5 * ((x - m1) / s1) ** 2)
-    g2 = a2 * np.exp(-0.5 * ((x - m2) / s2) ** 2)
-    return g1 + g2 + m * x + b
-\end{lstlisting}
-
-\begin{lstlisting}[style=pysmall]
-result = fit(x_pk, y_pk, model=two_gaussians_baseline,
-             sigma=e_pk,
-             p0={"a1": 150, "m1": 297.4, "s1": 0.6,
-                 "a2": 400, "m2": 302.8, "s2": 0.6,
-                 "m": 0, "b": 780})
-\end{lstlisting}
-
-\medskip
-\texttt{p0} provides initial guesses:
-\begin{itemize}
-    \scriptsize
-    \item \texttt{a1}, \texttt{a2}: approximate peak heights
-    \item \texttt{m1}, \texttt{m2}: approximate centre wavelengths
-    \item \texttt{s1}, \texttt{s2}: approximate widths (half-width at half-height $\times 0.85$)
-    \item \texttt{m}, \texttt{b}: baseline slope and offset
-\end{itemize}
-\end{frame}
-
-% =============================================================================
-% SLIDE 6 --- Interpret results
-% =============================================================================
-\begin{frame}[fragile]{Step 4: Interpret the fit results}
-
-\begin{columns}[t]
-\begin{column}{0.50\textwidth}
-\begin{lstlisting}[style=pysmall]
-FitResult: two_gaussians_baseline
-  a1 = 138.4 +/- 6.8
-  m1 = 297.33 +/- 0.024 nm
-  s1 = 0.418 +/- 0.025 nm
-  a2 = 382.6 +/- 6.8
-  m2 = 302.82 +/- 0.010 nm
-  s2 = 0.472 +/- 0.009 nm
-  m  = 3.79 +/- 0.34
-  b  = -342.9 +/- 103.3
-  reduced chi2 = 0.301
-  p = 1
-\end{lstlisting}
-\end{column}
-\begin{column}{0.46\textwidth}
-\vspace{4pt}
-\includegraphics[width=\columnwidth]{data/mercury_300nm_bimodal_fit.png}
-
-\end{column}
-\end{columns}
-
-\vspace{6pt}
-\begin{tcolorbox}[colback=labgreen!5, colframe=labgreen!80, size=small]
-Both peaks are well resolved: $\chi^2_\nu = 0.30$ (close to~1).
-Peak centres have sub-0.03~nm precision!
-\end{tcolorbox}
-\end{frame}
-
-% =============================================================================
-% SLIDE 7 --- What chi-squared tells you
-% =============================================================================
-\begin{frame}{What $\chi^2$ tells you}
-
-\[
-\chi^2_\nu = \frac{1}{\nu}\sum_i \left(\frac{y_i - f(x_i)}{\sigma_i}\right)^{\!2}
-\]
-
-\begin{itemize}
-    \item $\chi^2_\nu \approx 1$: residuals are consistent with the uncertainties
-    \item $\chi^2_\nu \gg 1$: model is wrong \textbf{or} errors are underestimated
-    \item $\chi^2_\nu \ll 1$: errors may be overestimated
-\end{itemize}
-
-\medskip
-Our $\chi^2_\nu = 0.30$ is slightly below 1, suggesting our error bars
-are a bit conservative. This is still a \textbf{good fit} -- the residuals
-scatter randomly around zero with no systematic pattern.
-
-\medskip
-\begin{tcolorbox}[colback=laborange!5, colframe=laborange!80, size=small]
-What if $\chi^2_\nu \gg 1$? Either the model is wrong (e.g.\ trying a single
-Gaussian on two overlapping peaks) or the uncertainties are too small.
-Always inspect the residuals to tell the difference!
-\end{tcolorbox}
-\end{frame}
-
-% =============================================================================
-% SLIDE 8 --- Visualise
-% =============================================================================
-\begin{frame}[fragile]{Step 5: Visualise with residuals}
-
-\begin{lstlisting}[style=pystyle]
-from labfit import plot_fit
-
-p = plot_fit(result, show_residuals=True)
-p.save("mercury_300nm_bimodal_fit.png")
-\end{lstlisting}
-
-\medskip
-\texttt{plot\_fit} produces data with error bars, the best-fit curve,
-and a \textbf{residual sub-panel} showing $(y_i - f(x_i))/\sigma_i$.
-
-\centering
-\includegraphics[width=0.42\textwidth]{data/mercury_300nm_bimodal_fit.png}
-\end{frame}
-
-% =============================================================================
-% SLIDE 9 --- Separate single-Gaussian fits
-% =============================================================================
-\begin{frame}[fragile]{Alternative: fit each peak separately}
+\begin{frame}[fragile]{Step 3: Fit each peak separately}
 
 \footnotesize
 You can also fit each peak individually with \texttt{gaussian\_baseline}:
@@ -364,6 +242,128 @@ Amplitude $= 374 \pm 8$, Centre $= 302.83 \pm 0.012$~nm, $\chi^2_\nu = 0.40$
 \tiny
 Separate fits are simpler but ignore the overlap. Use a joint model when
 peaks are close enough to share baseline.
+\end{frame}
+
+% =============================================================================
+% SLIDE 6 --- Custom two-Gaussian model
+% =============================================================================
+\begin{frame}[fragile]{Step 4: Define a custom two-Gaussian model}
+
+For overlapping peaks, write a model function or use the built-in equation:
+
+\[
+I(\lambda) = A_1 e^{-(\lambda-\mu_1)^2/2\sigma_1^2}
+           + A_2 e^{-(\lambda-\mu_2)^2/2\sigma_2^2}
+           + m\lambda + b
+\]
+
+\begin{lstlisting}[style=pysmall]
+def two_gaussians_baseline(x, a1, m1, s1, a2, m2, s2, m, b):
+    g1 = a1 * np.exp(-0.5 * ((x - m1) / s1) ** 2)
+    g2 = a2 * np.exp(-0.5 * ((x - m2) / s2) ** 2)
+    return g1 + g2 + m * x + b
+\end{lstlisting}
+
+\begin{lstlisting}[style=pysmall]
+result = fit(x_pk, y_pk, model=two_gaussians_baseline,
+             sigma=e_pk,
+             p0={"a1": 150, "m1": 297.4, "s1": 0.6,
+                 "a2": 400, "m2": 302.8, "s2": 0.6,
+                 "m": 0, "b": 780})
+\end{lstlisting}
+
+\medskip
+\texttt{p0} provides initial guesses:
+\begin{itemize}
+    \scriptsize
+    \item \texttt{a1}, \texttt{a2}: approximate peak heights
+    \item \texttt{m1}, \texttt{m2}: approximate centre wavelengths
+    \item \texttt{s1}, \texttt{s2}: approximate widths (half-width at half-height $\times 0.85$)
+    \item \texttt{m}, \texttt{b}: baseline slope and offset
+\end{itemize}
+\end{frame}
+
+% =============================================================================
+% SLIDE 7 --- Interpret results
+% =============================================================================
+\begin{frame}[fragile]{Step 5: Interpret the fit results}
+
+\begin{columns}[t]
+\begin{column}{0.50\textwidth}
+\begin{lstlisting}[style=pysmall]
+FitResult: two_gaussians_baseline
+  a1 = 138.4 +/- 6.8
+  m1 = 297.33 +/- 0.024 nm
+  s1 = 0.418 +/- 0.025 nm
+  a2 = 382.6 +/- 6.8
+  m2 = 302.82 +/- 0.010 nm
+  s2 = 0.472 +/- 0.009 nm
+  m  = 3.79 +/- 0.34
+  b  = -342.9 +/- 103.3
+  reduced chi2 = 0.301
+  p = 1
+\end{lstlisting}
+\end{column}
+\begin{column}{0.46\textwidth}
+\vspace{4pt}
+\includegraphics[width=\columnwidth]{data/mercury_300nm_bimodal_fit.png}
+
+\end{column}
+\end{columns}
+
+\vspace{6pt}
+\begin{tcolorbox}[colback=labgreen!5, colframe=labgreen!80, size=small]
+Both peaks are well resolved: $\chi^2_\nu = 0.30$ (close to~1).
+Peak centres have sub-0.03~nm precision!
+\end{tcolorbox}
+\end{frame}
+
+% =============================================================================
+% SLIDE 8 --- What chi-squared tells you
+% =============================================================================
+\begin{frame}{What $\chi^2$ tells you}
+
+\[
+\chi^2_\nu = \frac{1}{\nu}\sum_i \left(\frac{y_i - f(x_i)}{\sigma_i}\right)^{\!2}
+\]
+
+\begin{itemize}
+    \item $\chi^2_\nu \approx 1$: residuals are consistent with the uncertainties
+    \item $\chi^2_\nu \gg 1$: model is wrong \textbf{or} errors are underestimated
+    \item $\chi^2_\nu \ll 1$: errors may be overestimated
+\end{itemize}
+
+\medskip
+Our $\chi^2_\nu = 0.30$ is slightly below 1, suggesting our error bars
+are a bit conservative. This is still a \textbf{good fit} -- the residuals
+scatter randomly around zero with no systematic pattern.
+
+\medskip
+\begin{tcolorbox}[colback=laborange!5, colframe=laborange!80, size=small]
+What if $\chi^2_\nu \gg 1$? Either the model is wrong (e.g.\ trying a single
+Gaussian on two overlapping peaks) or the uncertainties are too small.
+Always inspect the residuals to tell the difference!
+\end{tcolorbox}
+\end{frame}
+
+% =============================================================================
+% SLIDE 9 --- Visualise
+% =============================================================================
+\begin{frame}[fragile]{Step 6: Visualise with residuals}
+
+\begin{lstlisting}[style=pystyle]
+from labfit import plot_fit
+
+p = plot_fit(result, show_residuals=True)
+p.save("mercury_300nm_bimodal_fit.png")
+\end{lstlisting}
+
+\medskip
+\texttt{plot\_fit} produces data with error bars, the best-fit curve,
+and a \textbf{residual sub-panel} showing $(y_i - f(x_i))/\sigma_i$.
+
+\centering
+\includegraphics[width=0.42\textwidth]{data/mercury_300nm_bimodal_fit.png}
 \end{frame}
 
 % =============================================================================

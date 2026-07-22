@@ -45,34 +45,26 @@ values to reduce the number of free parameters.
 If none of these help, check the residuals — structured residuals (a
 wiggle, a trend) almost always mean the model is missing something.
 
-What's the difference between ``fit()``, ``quick_fit()``, and ``fit_curve()``?
---------------------------------------------------------------------------------
+What's the difference between ``fit()`` and ``fit_curve()``?
+-------------------------------------------------------------
 
-All three do least-squares fitting — they just differ in how you call them.
+Both do least-squares fitting — they just differ in how you call them.
 
 - :func:`labfit.fit` is the **main** function. It takes ``x``, ``y``, and
   optionally ``sigma`` as keyword arguments::
 
       fit(x=x, y=y, model="gaussian", p0={...})
 
-- :func:`labfit.quick_fit` is an **alias** for ``fit()`` — same signature,
-  same result. It exists so that code reads more naturally when you rely on
-  automatic initial-guess heuristics.
-
-- :func:`labfit.fit_to_model` is **another alias** for ``fit()``. It was the
-  original name and is kept for backward compatibility.
-
-- :func:`labfit.fit_curve` is a **slimmed-down variant** that takes ``y_err``
-  as a **positional argument** (after ``x`` and ``y``)::
+- :func:`labfit.fit_curve` is a **slimmed-down variant** that takes ``model``
+  first and ``y_err`` as a **positional argument** (after ``x`` and ``y``)::
 
       fit_curve("gaussian", x, y, y_err)
 
   It is designed for quick interactive use when your errors are already in a
   separate array and you want to save a few keystrokes.
 
-In short: use ``fit()`` in scripts you plan to keep, ``quick_fit()`` when
-you want the code to read like a sentence, and ``fit_curve()`` at the REPL
-for one-liners.
+In short: use ``fit()`` in scripts you plan to keep, and ``fit_curve()`` at
+the REPL for one-liners.
 
 How do I use a custom model with Fitter?
 ----------------------------------------

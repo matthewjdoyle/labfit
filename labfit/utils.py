@@ -1,14 +1,58 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
 
 import numpy as np
 
-from .io import load_csv as _load_csv_series
 from .types import AsymmetricError
 
 
 def propagate_errors(func: Callable, jacobian=None, covariance=None, **params):
+    """Propagate parameter uncertainties through a function.
+
+    Given a function ``func`` and its parameters with associated
+    uncertainties, compute the output value and its propagated
+    uncertainty using the standard first-order (linear) formula:
+
+    .. math::
+
+        \\sigma_y = \\sqrt{\\mathbf{J} \\, \\Sigma \\, \\mathbf{J}^T}
+
+    where :math:`\\mathbf{J}` is the Jacobian of *func* with respect to
+    the parameters and :math:`\\Sigma` is their covariance matrix.
+
+    Parameters
+    ----------
+    func : callable
+        The function to evaluate. Called as ``func(**value_params)`` where
+        ``value_params`` excludes any ``<name>_error`` / ``<name>_sigma``
+        keywords.
+    jacobian : callable, optional
+        Function returning the partial derivatives of *func* with respect
+        to each parameter, called as ``jacobian(**value_params)``.
+        If omitted, a central-difference numerical Jacobian is used
+        (requires ``covariance`` to be provided).
+    covariance : array-like, optional
+        Full covariance matrix of the parameters. If omitted, a diagonal
+        covariance is constructed from ``<name>_error`` or
+        ``<name>_sigma`` keywords passed as ``**params``.
+    **params
+        Parameter values and their uncertainties. For each parameter
+        ``x``, pass ``x=...`` and optionally ``x_error=...`` or
+        ``x_sigma=...``.
+
+    Returns
+    -------
+    (value, uncertainty) : tuple of float
+        The function output and its propagated 1-σ uncertainty.
+
+    Raises
+    ------
+    ValueError
+        If ``jacobian`` is None and ``covariance`` is None (cannot
+        compute a numerical Jacobian without knowing the parameter
+        count).
+    """
     value_kwargs = {
         name: value
         for name, value in params.items()
@@ -17,8 +61,8 @@ def propagate_errors(func: Callable, jacobian=None, covariance=None, **params):
     y = func(**value_kwargs)
 
     if covariance is None:
-        # Backwards-compatible convenience: if the caller passes a value and an associated
-        # <name>_error keyword, use a diagonal covariance. Otherwise return zero uncertainty.
+        # Convenience: if the caller passes a value and an associated
+        # <name>_error keyword, use a diagonal covariance.
         errors = []
         for name in value_kwargs:
             err = params.get(f"{name}_error")
@@ -32,7 +76,7 @@ def propagate_errors(func: Callable, jacobian=None, covariance=None, **params):
     covariance = np.asarray(covariance, dtype=float)
 
     if jacobian is None:
-        raise ValueError("jacobian is required when propagating parameter uncertainties")
+        jacobian = _numerical_jacobian(func, value_kwargs)
 
     grad = jacobian(**value_kwargs)
     grad = np.atleast_1d(np.asarray(grad, dtype=float))
@@ -40,15 +84,34 @@ def propagate_errors(func: Callable, jacobian=None, covariance=None, **params):
     return y, float(np.sqrt(max(variance, 0.0)))
 
 
-def as_array(value: Any, dtype=float):
-    return np.asarray(value, dtype=dtype)
+def _numerical_jacobian(func, value_kwargs, eps=1e-8):
+    """Build a central-difference Jacobian callable for *func*."""
+
+    def jacobian(**kwargs):
+        names = list(value_kwargs.keys())
+        base = np.array([float(value_kwargs[n]) for n in names], dtype=float)
+        grad = np.zeros(len(names), dtype=float)
+        for i in range(len(names)):
+            step = max(abs(base[i]) * eps, eps)
+            up = base.copy()
+            up[i] += step
+            down = base.copy()
+            down[i] -= step
+            f_up = func(**dict(zip(names, up, strict=True)))
+            f_down = func(**dict(zip(names, down, strict=True)))
+            grad[i] = (float(f_up) - float(f_down)) / (2.0 * step)
+        return grad
+
+    return jacobian
 
 
 def effective_sigma(sigma=None, sigma_low=None, sigma_high=None, sigma_cov=None):
     if sigma_cov is not None:
         return None
     if sigma_low is not None and sigma_high is not None:
-        return np.sqrt((np.asarray(sigma_low, dtype=float) ** 2 + np.asarray(sigma_high, dtype=float) ** 2) / 2.0)
+        return np.sqrt(
+            (np.asarray(sigma_low, dtype=float) ** 2 + np.asarray(sigma_high, dtype=float) ** 2) / 2.0
+        )
     if isinstance(sigma, AsymmetricError):
         return sigma.effective
     if sigma is None:
@@ -56,10 +119,4 @@ def effective_sigma(sigma=None, sigma_low=None, sigma_high=None, sigma_cov=None)
     return np.asarray(sigma, dtype=float)
 
 
-def load_csv(path, x_col="x", y_col="y", y_err_col=None, *, default_fraction=0.05, error_mode="auto", label=""):
-    series = _load_csv_series(path, x_col=x_col, y_col=y_col, y_err_col=y_err_col, default_fraction=default_fraction, error_mode=error_mode, label=label)
-    sigma = series.y_error
-    return series.x, series.y, sigma, series.sigma_low, series.sigma_high
-
-
-__all__ = ["propagate_errors", "as_array", "effective_sigma"]
+__all__ = ["propagate_errors", "effective_sigma"]

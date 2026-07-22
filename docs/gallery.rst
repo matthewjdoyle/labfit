@@ -42,27 +42,27 @@ Linear fit console output
    intercept = -0.694920 ± 0.041056
    reduced chi^2 = 0.788588
 
-Gaussian quick fit
-------------------
+Gaussian fit
+------------
 
-This example uses the convenience wrapper for a standard Gaussian peak.
+This example uses the built-in Gaussian model with automatic initial guesses.
 
 .. code-block:: python
 
    import numpy as np
-   from labfit import quick_fit, plot_fit
+   from labfit import fit, plot_fit
 
    rng = np.random.default_rng(20240607)
    x = np.linspace(-5.0, 5.0, 260)
    y = 4.0 * np.exp(-0.5 * ((x - 0.75) / 1.10) ** 2) + 0.18
    y = y + rng.normal(0.0, 0.08, size=x.size)
 
-   result = quick_fit(x, y, model="gaussian")
-   plot = plot_fit(result, show_residuals=True, title="Gaussian quick fit")
+   result = fit(x, y, model="gaussian")
+   plot = plot_fit(result, show_residuals=True, title="Gaussian fit")
    plot.save("docs/_static/gallery/gaussian_fit.png")
 
 .. figure:: _static/gallery/gaussian_fit.png
-   :alt: Gaussian quick fit
+   :alt: Gaussian fit
    :width: 100%
 
    A standard Gaussian fit using the built-in model and automatic initial guess.
@@ -130,12 +130,12 @@ Bimodal Gaussian fit
 --------------------
 
 This example fits a sum of two Gaussian peaks using the built-in
-``bimodal_gaussian`` model with the automatic ``quick_fit`` wrapper.
+``bimodal_gaussian`` model.
 
 .. code-block:: python
 
    import numpy as np
-   from labfit import quick_fit, plot_fit
+   from labfit import fit, plot_fit
 
    rng = np.random.default_rng(20260607)
    x = np.linspace(-6.0, 10.0, 300)
@@ -145,7 +145,7 @@ This example fits a sum of two Gaussian peaks using the built-in
        + rng.normal(0.0, 0.06, size=x.size)
    )
 
-   result = quick_fit(
+   result = fit(
        x, y, model="bimodal_gaussian",
        p0={"amplitude1": 3.0, "mean1": 0.0, "sigma1": 1.0,
            "amplitude2": 1.5, "mean2": 4.0, "sigma2": 1.0},

@@ -42,13 +42,13 @@ Three lines: CSV → fit → plot → goodness-of-fit.
 
 ```python
 import numpy as np
-from labfit import quick_fit, plot_fit
+from labfit import fit, plot_fit
 
 rng = np.random.default_rng(42)
 x = np.linspace(-5, 5, 200)
 y = 3.0 * np.exp(-0.5 * ((x - 0.5) / 1.2) ** 2) + rng.normal(0, 0.05, size=x.size)
 
-result = quick_fit(x, y, model="gaussian")
+result = fit(x, y, model="gaussian")
 print(f"amplitude = {result.params['amplitude']:.3f}")
 print(f"mean      = {result.params['mean']:.3f}")
 print(f"sigma     = {result.params['sigma']:.3f}")

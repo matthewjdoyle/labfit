@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Iterable, Sequence
 import csv
+from collections.abc import Iterable, Sequence
+from pathlib import Path
 
 import numpy as np
 
@@ -110,6 +110,19 @@ def _extract_column(rows: Sequence[Sequence[str]], index: int) -> np.ndarray:
 
 
 def _infer_y_err(y: np.ndarray, *, default_fraction: float, error_mode: str) -> np.ndarray:
+    """Infer y-uncertainties when no explicit error column is present.
+
+    The heuristic depends on ``error_mode``:
+
+    - ``"poisson"`` — assumes counting statistics: σ = √y (clipped to ≥ 0).
+    - ``"fraction"`` — uniform relative uncertainty: σ = |y| × default_fraction.
+    - ``"auto"`` (default) — if all y-values are non-negative integers,
+      applies Poisson statistics; otherwise uses a relative uncertainty
+      of ``default_fraction`` (default 5 %).
+
+    This is a convenience for quick exploration. For publishable results
+    always provide explicit uncertainties.
+    """
     mode = error_mode.lower()
     if mode not in {"auto", "poisson", "fraction"}:
         raise ValueError("error_mode must be one of: auto, poisson, fraction")
@@ -183,8 +196,8 @@ def _load_series(
 
 def load_csv(
     path,
-    x_col,
-    y_col,
+    x_col="x",
+    y_col="y",
     y_err_col=None,
     *,
     default_fraction: float = 0.05,
@@ -205,8 +218,8 @@ def load_csv(
 
 def load_txt(
     path,
-    x_col,
-    y_col,
+    x_col="x",
+    y_col="y",
     y_err_col=None,
     *,
     default_fraction: float = 0.05,

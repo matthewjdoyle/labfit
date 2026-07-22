@@ -4,12 +4,23 @@ import math
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from labfit import DataSeries, Dataset, FitResult, Plotter, fit, fit_curve, plot_fit, plot_multi_fit, plot_residuals
+from labfit import (
+    DataSeries,
+    Dataset,
+    FitResult,
+    Plotter,
+    fit,
+    fit_curve,
+    plot_fit,
+    plot_multi_fit,
+    plot_residuals,
+)
 from labfit.io import combine_series, load_csv, load_txt
 from labfit.plot import _as_results, _as_series, _fit_label, plot_result
 from labfit.types import AsymmetricError
@@ -19,10 +30,7 @@ from labfit.utils import propagate_errors
 def test_loader_variants_round_trip_and_series_combination(tmp_path: Path):
     weighted_csv = tmp_path / "weighted.csv"
     weighted_csv.write_text(
-        "x,y,y_err,sigma_low,sigma_high\n"
-        "0,1,0.1,0.2,0.3\n"
-        "1,4,0.2,0.4,0.6\n"
-        "2,9,0.3,0.6,0.8\n"
+        "x,y,y_err,sigma_low,sigma_high\n0,1,0.1,0.2,0.3\n1,4,0.2,0.4,0.6\n2,9,0.3,0.6,0.8\n"
     )
     weighted = load_csv(weighted_csv, 0, 1, y_err_col="y_err", label="weighted")
     assert weighted.label == "weighted"
@@ -33,20 +41,12 @@ def test_loader_variants_round_trip_and_series_combination(tmp_path: Path):
     assert np.allclose(weighted.sigma_high, [0.3, 0.6, 0.8])
 
     fractional_csv = tmp_path / "fractional.csv"
-    fractional_csv.write_text(
-        "x,y,frac_err\n"
-        "0,10,0.1\n"
-        "1,12,0.25\n"
-    )
+    fractional_csv.write_text("x,y,frac_err\n0,10,0.1\n1,12,0.25\n")
     fractional = load_csv(fractional_csv, "x", "y")
     assert np.allclose(fractional.y_err, [1.0, 3.0])
 
     counts_txt = tmp_path / "counts.txt"
-    counts_txt.write_text(
-        "0 4\n"
-        "1 9\n"
-        "2 16\n"
-    )
+    counts_txt.write_text("0 4\n1 9\n2 16\n")
     counts = load_txt(counts_txt, 0, 1)
     assert np.allclose(counts.y_err, np.sqrt([4.0, 9.0, 16.0]))
 
@@ -78,8 +78,11 @@ def test_error_propagation_and_validation_edges():
     assert value2 == 3.0
     assert math.isclose(uncertainty2, 2.0, rel_tol=0.0, abs_tol=1e-12)
 
-    with pytest.raises(ValueError, match="jacobian is required"):
-        propagate_errors(lambda x: x, x=1.0)
+    # Without jacobian, numerical fallback is used (returns zero uncertainty
+    # since covariance is zero when no _error keywords are passed)
+    val_num, err_num = propagate_errors(lambda x: x**2, x=3.0)
+    assert val_num == 9.0
+    assert err_num == 0.0
 
     with pytest.raises(ValueError, match="sigma and y_err must describe the same uncertainties"):
         DataSeries(x=[0, 1], y=[1, 2], sigma=[0.1, 0.2], y_err=[0.1, 0.3])
@@ -154,7 +157,9 @@ def test_plotting_smoke_covers_single_and_multi_series(tmp_path: Path):
     fig, ax = plt.subplots()
     axr = ax.twinx()
     existing = Plotter(figure=fig, axes=(ax, axr))
-    overlaid = plot_result(result=[result_a, result_b], plotter=existing, show_residuals=True, title="overlay")
+    overlaid = plot_result(
+        result=[result_a, result_b], plotter=existing, show_residuals=True, title="overlay"
+    )
     assert overlaid.figure is fig
     assert len(overlaid.figure.axes) >= 2
 

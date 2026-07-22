@@ -10,8 +10,6 @@ The public fitting helpers are intentionally small:
 
 - :func:`labfit.fit` — the main least-squares entry point.
 - :func:`labfit.fit_curve` — a convenience wrapper that takes ``y_err`` explicitly.
-- :func:`labfit.fit_to_model` — alias for :func:`labfit.fit` for readability.
-- :func:`labfit.quick_fit` — convenience alias for quick experiments.
 - :func:`labfit.fit_multi` — fit a whole sequence of :class:`labfit.Series` objects.
 - :func:`labfit.plot_fit` — plot one fit and, by default, its residuals.
 - :func:`labfit.plot_multi_fit` — compare multiple fits in a grid.
@@ -23,10 +21,6 @@ Entry points
 .. autofunction:: labfit.fit
 
 .. autofunction:: labfit.fit_curve
-
-.. autofunction:: labfit.fit_to_model
-
-.. autofunction:: labfit.quick_fit
 
 .. autofunction:: labfit.fit_multi
 

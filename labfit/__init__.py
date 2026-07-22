@@ -1,13 +1,11 @@
-from .api import fit, fit_multi, fit_to_model, quick_fit, plot_fit, plot_multi_fit, plot_residuals
-from .fit import fit_curve
-from .types import AsymmetricError, DataSeries, Dataset, Fitter, FitResult, Plotter, Series
+from ._fit import fit_curve
+from .api import fit, fit_multi, plot_fit, plot_multi_fit, plot_residuals
+from .types import AsymmetricError, DataSeries, Dataset, FitResult, Fitter, Plotter, Series
 
 __all__ = [
     "fit",
     "fit_curve",
     "fit_multi",
-    "fit_to_model",
-    "quick_fit",
     "plot_fit",
     "plot_multi_fit",
     "plot_residuals",

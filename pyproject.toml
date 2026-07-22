@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "labfit"
-version = "0.1.0"
+version = "0.2.0"
 description = "Student-friendly least-squares curve fitting for Python"
 readme = "README.md"
 license = {text = "MIT"}
@@ -28,6 +28,18 @@ dependencies = [
     "matplotlib>=3.8",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "ruff>=0.4",
+    "mypy>=1.8",
+]
+docs = [
+    "sphinx>=7.2,<8",
+    "sphinx-rtd-theme>=2.0",
+]
+
 [project.urls]
 Homepage = "https://matthewd0yle.com"
 Documentation = "https://matthewd0yle.com/labfit"
@@ -43,5 +55,28 @@ testpaths = ["tests"]
 line-length = 110
 target-version = "py310"
 
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+"docs/generate_gallery_assets.py" = ["E402"]
+"docs/generate_least_squares_figures.py" = ["E402"]
+"benchmarks/benchmark_labfit.py" = ["E402"]
+
+[tool.ruff.format]
+
 [tool.coverage.run]
 source = ["labfit"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_configs = true
+warn_redundant_casts = true
+
+[[tool.mypy.overrides]]
+module = "scipy.*"
+ignore_missing_imports = true

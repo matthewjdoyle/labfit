@@ -34,7 +34,4 @@ def fit_curve(model, x, y, y_err, *, p0=None, bounds=None, label="", **kwargs):
     return _fit(x, y, model=model, sigma=y_err, p0=p0, bounds=bounds, label=label, **kwargs)
 
 
-fit = fit_curve
-
-
-__all__ = ["fit_curve", "fit"]
+__all__ = ["fit_curve"]

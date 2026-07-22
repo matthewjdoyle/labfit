@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import matplotlib
-matplotlib.use("Agg", force=True)
-
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.stats import norm
 
 from .types import DataSeries, FitResult, Plotter
-
 
 # ── Colour-blind friendly palette (Okabe-Ito) ──────────────────────
 _OKABE_ITO = [
@@ -25,55 +22,57 @@ _OKABE_ITO = [
 # ── Publication style ──────────────────────────────────────────────
 
 
+_PUBLICATION_RC = {
+    "font.family": "sans-serif",
+    "font.sans-serif": ["DejaVu Sans"],
+    "font.size": 9.5,
+    "mathtext.fontset": "dejavusans",
+    "figure.dpi": 150,
+    "savefig.dpi": 300,
+    "savefig.bbox": "tight",
+    "axes.spines.top": True,
+    "axes.spines.right": True,
+    "axes.linewidth": 0.8,
+    "axes.labelsize": 10.5,
+    "axes.titlesize": 11,
+    "axes.prop_cycle": plt.cycler(color=_OKABE_ITO),
+    "axes.grid": False,
+    "xtick.direction": "in",
+    "xtick.major.size": 4,
+    "xtick.major.width": 0.7,
+    "xtick.minor.size": 2,
+    "xtick.minor.width": 0.5,
+    "xtick.labelsize": 9,
+    "xtick.top": True,
+    "ytick.direction": "in",
+    "ytick.major.size": 4,
+    "ytick.major.width": 0.7,
+    "ytick.minor.size": 2,
+    "ytick.minor.width": 0.5,
+    "ytick.labelsize": 9,
+    "ytick.right": True,
+    "legend.frameon": False,
+    "legend.fontsize": 8.5,
+    "legend.handlelength": 1.2,
+    "lines.linewidth": 1.4,
+    "lines.markersize": 5.5,
+}
+
+_style_applied = False
+
+
 def use_publication_style():
     """Apply matplotlib rcParams suitable for journal-quality figures.
 
     Uses a sans-serif font family (DejaVu Sans, built into matplotlib)
     for a clean modern appearance — no external TeX installation needed.
+    Idempotent: only applies once per session.
     """
-    plt.rcParams.update(
-        {
-            # Font — DejaVu Sans (built-in, no external deps)
-            "font.family": "sans-serif",
-            "font.sans-serif": ["DejaVu Sans"],
-            "font.size": 9.5,
-            "mathtext.fontset": "dejavusans",
-            # Figure
-            "figure.dpi": 150,
-            "savefig.dpi": 300,
-            "savefig.bbox": "tight",
-            # Axes — all four spines visible
-            "axes.spines.top": True,
-            "axes.spines.right": True,
-            "axes.linewidth": 0.8,
-            "axes.labelsize": 10.5,
-            "axes.titlesize": 11,
-            "axes.prop_cycle": plt.cycler(color=_OKABE_ITO),
-            "axes.grid": False,
-            # Ticks — inward on all four sides
-            "xtick.direction": "in",
-            "xtick.major.size": 4,
-            "xtick.major.width": 0.7,
-            "xtick.minor.size": 2,
-            "xtick.minor.width": 0.5,
-            "xtick.labelsize": 9,
-            "xtick.top": True,
-            "ytick.direction": "in",
-            "ytick.major.size": 4,
-            "ytick.major.width": 0.7,
-            "ytick.minor.size": 2,
-            "ytick.minor.width": 0.5,
-            "ytick.labelsize": 9,
-            "ytick.right": True,
-            # Legend
-            "legend.frameon": False,
-            "legend.fontsize": 8.5,
-            "legend.handlelength": 1.2,
-            # Lines
-            "lines.linewidth": 1.4,
-            "lines.markersize": 5.5,
-        }
-    )
+    global _style_applied
+    if _style_applied:
+        return
+    plt.rcParams.update(_PUBLICATION_RC)
+    _style_applied = True
 
 
 def _as_results(result):
@@ -120,14 +119,21 @@ def _plot_series(ax, series: DataSeries, index: int):
     label = _series_label(series, index)
     color = _OKABE_ITO[index % len(_OKABE_ITO)]
     if yerr is None:
-        (line,) = ax.plot(series.x, series.y, "o", ms=4.0,
-                          color=color, zorder=2, label=label)
+        (line,) = ax.plot(series.x, series.y, "o", ms=4.0, color=color, zorder=2, label=label)
         return line.get_color()
-    container = ax.errorbar(series.x, series.y, yerr=yerr, fmt="o",
-                            color=color, markersize=4.0,
-                            capsize=3.5, capthick=1.2,
-                            elinewidth=1.2,
-                            zorder=2, label=label)
+    container = ax.errorbar(
+        series.x,
+        series.y,
+        yerr=yerr,
+        fmt="o",
+        color=color,
+        markersize=4.0,
+        capsize=3.5,
+        capthick=1.2,
+        elinewidth=1.2,
+        zorder=2,
+        label=label,
+    )
     # Fix error bar lines z-order — matplotlib internally offsets them
     # to zorder-0.1, which puts them behind the markers and caps
     if len(container.lines) > 2:
@@ -148,6 +154,66 @@ def _plot_fit_line(ax, result: FitResult, index: int):
     return line.get_color()
 
 
+def _confidence_band(
+    result: FitResult, xs: np.ndarray, ci_level: float = 0.68, prediction: bool = False
+) -> tuple[np.ndarray, np.ndarray] | None:
+    """Compute a confidence or prediction band for the fit line.
+
+    Returns ``(lower, upper)`` arrays, or ``None`` if the covariance is
+    unavailable.
+    """
+    if result.covariance is None or result.model is None:
+        return None
+    cov = result.covariance
+    if cov.ndim != 2 or not np.all(np.isfinite(np.diag(cov))):
+        return None
+
+    names = result.param_names or tuple(result.params.keys())
+    p0 = np.array([result.params[n] for n in names], dtype=float)
+    n_params = len(p0)
+
+    def model_at(x_val: float) -> float:
+        return float(result.model(np.array([x_val]), *p0)[0])
+
+    ys = np.asarray(result.predict(xs), dtype=float)
+    sigma_fit = np.zeros_like(ys)
+
+    eps = 1e-8
+    for i, xv in enumerate(xs):
+        grad = np.zeros(n_params, dtype=float)
+        for j in range(n_params):
+            step = max(abs(p0[j]) * eps, eps)
+            up = p0.copy()
+            up[j] += step
+            down = p0.copy()
+            down[j] -= step
+            grad[j] = (
+                float(result.model(np.array([xv]), *up)[0]) - float(result.model(np.array([xv]), *down)[0])
+            ) / (2.0 * step)
+        sigma_fit[i] = float(np.sqrt(max(grad @ cov @ grad, 0.0)))
+
+    if prediction:
+        if result.is_weighted:
+            residual_var = float(result.reduced_chi2)
+        elif result.y is not None and result.y_fit is not None:
+            residual_var = float(np.var(result.y - result.y_fit))
+        else:
+            residual_var = 0.0
+        sigma_fit = np.sqrt(sigma_fit**2 + residual_var)
+
+    z = norm.ppf(0.5 + ci_level / 2.0)
+    return ys - z * sigma_fit, ys + z * sigma_fit
+
+
+def _plot_ci_band(ax, result: FitResult, xs: np.ndarray, color: str, ci_level: float, prediction: bool):
+    band = _confidence_band(result, xs, ci_level=ci_level, prediction=prediction)
+    if band is None:
+        return
+    lower, upper = band
+    label = f"{ci_level * 100:.0f}% {'prediction' if prediction else 'confidence'}"
+    ax.fill_between(xs, lower, upper, color=color, alpha=0.18, zorder=2, label=label)
+
+
 def _plot_residual_axis(axr, result: FitResult, color: str | None = None):
     residuals = _residuals(result)
     if residuals is None:
@@ -155,8 +221,7 @@ def _plot_residual_axis(axr, result: FitResult, color: str | None = None):
     if color is None:
         color = _OKABE_ITO[1]
     axr.axhline(0.0, color="0.35", lw=1.0, ls="--")
-    axr.plot(result.x, residuals, marker="o", ls="none", ms=3.5,
-             color=color)
+    axr.plot(result.x, residuals, marker="o", ls="none", ms=3.5, color=color)
     axr.set_ylabel("residuals")
 
 
@@ -202,10 +267,21 @@ def _single_axes_from_existing(ax, *, show_residuals: bool, figsize):
     return fig, ax_main, ax_res
 
 
-def _plot_single_fit(result: FitResult, *, data_series=None, ax=None,
-                     show_residuals: bool = True, title: str | None = None,
-                     xlabel: str = "x", ylabel: str = "y",
-                     figsize=(7, 4), plotter: Plotter | None = None) -> Plotter:
+def _plot_single_fit(
+    result: FitResult,
+    *,
+    data_series=None,
+    ax=None,
+    show_residuals: bool = True,
+    show_ci: bool = False,
+    ci_level: float = 0.68,
+    prediction: bool = False,
+    title: str | None = None,
+    xlabel: str = "x",
+    ylabel: str = "y",
+    figsize=(7, 4),
+    plotter: Plotter | None = None,
+) -> Plotter:
     series = data_series
     if series is None:
         series = result.series
@@ -232,6 +308,9 @@ def _plot_single_fit(result: FitResult, *, data_series=None, ax=None,
     fit_color = _plot_fit_line(ax_main, result, 0)
     if fit_color is None:
         fit_color = color
+    if show_ci and result.x is not None:
+        xs_band = np.linspace(float(np.min(result.x)), float(np.max(result.x)), 200)
+        _plot_ci_band(ax_main, result, xs_band, fit_color, ci_level, prediction)
     if ax_res is not None:
         _plot_residual_axis(ax_res, result, fit_color)
     _style_axes(ax_main, ax_res, xlabel=xlabel, ylabel=ylabel, title=title)
@@ -250,9 +329,16 @@ def _multi_layout(count: int, layout: str):
     return 2, max(count, 1)
 
 
-def plot_multi_fit(results, series_list, layout: str = "grid", *,
-                   figsize=(5.0, 4.0), title: str | None = None,
-                   xlabel: str = "x", ylabel: str = "y") -> Plotter:
+def plot_multi_fit(
+    results,
+    series_list,
+    layout: str = "grid",
+    *,
+    figsize=(5.0, 4.0),
+    title: str | None = None,
+    xlabel: str = "x",
+    ylabel: str = "y",
+) -> Plotter:
     """Compare multiple fits in a side-by-side grid.
 
     Each fit gets its own column with data and fit line in the top
@@ -298,7 +384,7 @@ def plot_multi_fit(results, series_list, layout: str = "grid", *,
     if axes.ndim == 1:
         axes = axes[:, np.newaxis]
 
-    for idx, (result, series) in enumerate(zip(results, series_items)):
+    for idx, (result, series) in enumerate(zip(results, series_items, strict=True)):
         ax = axes[0, idx]
         axr = axes[1, idx]
         color = _plot_series(ax, series, idx)
@@ -317,11 +403,6 @@ def plot_multi_fit(results, series_list, layout: str = "grid", *,
         handles, labels = ax.get_legend_handles_labels()
         if handles:
             ax.legend(loc="best")
-
-    # Hide any unused columns if grid were ever expanded later.
-    for idx in range(len(results), ncols):
-        axes[0, idx].set_visible(False)
-        axes[1, idx].set_visible(False)
 
     plotter = Plotter(series=series_items, figure=fig, axes=axes)
     return plotter
@@ -354,10 +435,17 @@ def _add_result_axes(ax, result: FitResult, show_residuals: bool = False):
     return ax
 
 
-def plot_result(result=None, *, plotter: Plotter | None = None,
-                show_residuals: bool = False, title: str | None = None,
-                xlabel: str = "x", ylabel: str = "y",
-                figsize=(7, 4), **kwargs) -> Plotter:
+def plot_result(
+    result=None,
+    *,
+    plotter: Plotter | None = None,
+    show_residuals: bool = False,
+    title: str | None = None,
+    xlabel: str = "x",
+    ylabel: str = "y",
+    figsize=(7, 4),
+    **kwargs,
+) -> Plotter:
     """Plot fit results or raw data series on a single set of axes.
 
     Use this when you want to overlay several fits or plot raw series
@@ -435,8 +523,17 @@ def plot_result(result=None, *, plotter: Plotter | None = None,
     return plotter
 
 
-def plot_fit(result=None, *, data_series=None, ax=None,
-             show_residuals: bool = True, **kwargs) -> Plotter:
+def plot_fit(
+    result=None,
+    *,
+    data_series=None,
+    ax=None,
+    show_residuals: bool = True,
+    show_ci: bool = False,
+    ci_level: float = 0.68,
+    prediction: bool = False,
+    **kwargs,
+) -> Plotter:
     """Plot a single fit result with its data and residuals.
 
     The simplest way to visualise a fitted curve. Data points with
@@ -453,6 +550,13 @@ def plot_fit(result=None, *, data_series=None, ax=None,
         Existing axes to plot into.
     show_residuals : bool, default ``True``
         Include a residual sub-panel.
+    show_ci : bool, default ``False``
+        Draw a confidence band around the fit line.
+    ci_level : float, default ``0.68``
+        Confidence level for the band (e.g. 0.68 for 1σ, 0.95 for 95%).
+    prediction : bool, default ``False``
+        If ``True``, draw a prediction band (includes data scatter)
+        instead of a confidence band for the mean.
     title : str, optional
         Plot title.
     xlabel, ylabel : str
@@ -466,8 +570,16 @@ def plot_fit(result=None, *, data_series=None, ax=None,
     results = _as_results(result)
     if len(results) != 1:
         return plot_result(result=result, show_residuals=show_residuals, **kwargs)
-    return _plot_single_fit(results[0], data_series=data_series, ax=ax,
-                            show_residuals=show_residuals, **kwargs)
+    return _plot_single_fit(
+        results[0],
+        data_series=data_series,
+        ax=ax,
+        show_residuals=show_residuals,
+        show_ci=show_ci,
+        ci_level=ci_level,
+        prediction=prediction,
+        **kwargs,
+    )
 
 
 def plot_residuals(result=None, *, data_series=None, ax=None, **kwargs) -> Plotter:
@@ -493,7 +605,8 @@ def plot_residuals(result=None, *, data_series=None, ax=None, **kwargs) -> Plott
 
 
 __all__ = [
-    "plot_fit", "plot_multi_fit", "plot_residuals", "plot_result",
-    "_add_result_axes", "_as_results", "_as_series", "_fit_label",
-    "_plot_series", "_plot_fit_line", "_plot_residual_axis",
+    "plot_fit",
+    "plot_multi_fit",
+    "plot_residuals",
+    "plot_result",
 ]

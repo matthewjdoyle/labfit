@@ -1,36 +1,261 @@
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Iterable
-
 import warnings
+from collections import namedtuple
+from collections.abc import Iterable
+from pathlib import Path
 
 import numpy as np
 from scipy.optimize import least_squares
 from scipy.stats import chi2 as chi2_dist
 
+from .io import load_csv as _load_csv
 from .models import get_model, model_param_names
 from .types import DataSeries, Dataset, FitResult
-from .utils import effective_sigma, load_csv
+from .utils import effective_sigma
 
 
 def _coerce_series_input(x, y=None, *, sigma=None, sigma_low=None, sigma_high=None, sigma_cov=None, label=""):
     if isinstance(x, DataSeries) and y is None:
         return x
     if isinstance(x, (str, Path)) and y is None:
-        x_arr, y_arr, sig, sig_low, sig_high = load_csv(x)
+        series = _load_csv(x)
         return DataSeries(
-            x=x_arr,
-            y=y_arr,
-            sigma=sigma if sigma is not None else sig,
-            sigma_low=sigma_low if sigma_low is not None else sig_low,
-            sigma_high=sigma_high if sigma_high is not None else sig_high,
+            x=series.x,
+            y=series.y,
+            sigma=sigma if sigma is not None else series.sigma,
+            sigma_low=sigma_low if sigma_low is not None else series.sigma_low,
+            sigma_high=sigma_high if sigma_high is not None else series.sigma_high,
             sigma_cov=sigma_cov,
             label=label,
         )
     if y is None:
         raise TypeError("fit requires either (x, y) arrays or a DataSeries / CSV path")
-    return DataSeries(x=x, y=y, sigma=sigma, sigma_low=sigma_low, sigma_high=sigma_high, sigma_cov=sigma_cov, label=label)
+    return DataSeries(
+        x=x, y=y, sigma=sigma, sigma_low=sigma_low, sigma_high=sigma_high, sigma_cov=sigma_cov, label=label
+    )
+
+
+_GuessStats = namedtuple(
+    "_GuessStats", ["x", "y", "span", "yrange", "y_min", "y_max", "y_mean", "x_mean", "x_at_max"]
+)
+
+
+def _osc_freq(s: _GuessStats) -> float:
+    """Estimate oscillation frequency from zero crossings."""
+    freq = 1.0 / max(s.span, 1.0)
+    if s.x.size > 1:
+        dx = np.diff(s.x)
+        if np.all(dx > 0):
+            y_detrended = s.y - s.y_mean
+            zero_crossings = np.where(np.signbit(y_detrended[:-1]) != np.signbit(y_detrended[1:]))[0]
+            if zero_crossings.size >= 2:
+                est_periods = np.diff(s.x[zero_crossings]) * 2.0
+                period = float(np.median(est_periods)) if est_periods.size else s.span
+                if period > 0:
+                    freq = 1.0 / period
+    return freq
+
+
+def _guess_linear(s):
+    if s.x.size >= 2:
+        slope, intercept = np.polyfit(s.x, s.y, 1)
+        return [float(slope), float(intercept)]
+    return [1.0, s.y_mean]
+
+
+def _guess_quadratic(s):
+    coeffs = np.polyfit(s.x, s.y, 2) if s.x.size >= 3 else [0.0, 1.0, s.y_mean]
+    return [float(v) for v in coeffs]
+
+
+def _guess_cubic(s):
+    coeffs = np.polyfit(s.x, s.y, 3) if s.x.size >= 4 else [0.0, 0.0, 1.0, s.y_mean]
+    return [float(v) for v in coeffs]
+
+
+def _guess_constant(s):
+    return [s.y_mean]
+
+
+def _guess_gaussian(s):
+    sigma0 = s.span / 6.0 if s.span else 1.0
+    amp = s.y_max - s.y_min if s.yrange else 1.0
+    return [amp, s.x_at_max, max(sigma0, 1e-6)]
+
+
+def _guess_lorentzian(s):
+    amp = s.y_max - s.y_min if s.yrange else 1.0
+    return [amp, s.x_at_max, max(s.span / 10.0, 1e-6)]
+
+
+def _guess_exponential(s):
+    amp = s.y[0] if s.y.size else 1.0
+    decay = 1.0 / max(s.span, 1.0)
+    positive = s.y > 0
+    if positive.sum() >= 2 and s.x.size >= 2:
+        slope, intercept = np.polyfit(s.x[positive], np.log(s.y[positive]), 1)
+        amp = float(np.exp(intercept))
+        decay = float(-slope)
+    return [float(amp), float(decay)]
+
+
+def _guess_power_law(s):
+    amp = max(s.y_max, 1e-6)
+    exponent = 1.0
+    positive = (s.x > 0) & (s.y > 0)
+    if positive.sum() >= 2:
+        slope, intercept = np.polyfit(np.log(s.x[positive]), np.log(s.y[positive]), 1)
+        amp = float(np.exp(intercept))
+        exponent = float(slope)
+    return [float(amp), float(exponent)]
+
+
+def _guess_logistic(s):
+    return [s.yrange or 1.0, s.x_mean, 1.0 / max(s.span, 1.0), s.y_min]
+
+
+def _guess_damped_oscillator(s):
+    freq = _osc_freq(s)
+    amp = max(abs(s.y_min), abs(s.y_max), 1.0)
+    return [float(amp), 0.1 / max(s.span, 1.0), float(freq), 0.0]
+
+
+def _guess_damped_sine(s):
+    freq = _osc_freq(s)
+    amp = max(abs(s.y_min), abs(s.y_max), 1.0)
+    return [float(amp), 0.1 / max(s.span, 1.0), float(freq), 0.0, float(s.y_mean)]
+
+
+def _guess_sine(s):
+    freq = _osc_freq(s)
+    amp = max(abs(s.y_min), abs(s.y_max), 1.0)
+    return [float(amp), float(freq), 0.0, float(s.y_mean)]
+
+
+def _guess_cosine(s):
+    return _guess_sine(s)
+
+
+def _guess_beat(s):
+    freq = _osc_freq(s)
+    amp = max(abs(s.y_min), abs(s.y_max), 1.0)
+    return [float(amp), float(freq), float(freq * 1.08), 0.0, float(s.y_mean)]
+
+
+def _guess_voigt(s):
+    amp = s.y_max - s.y_min if s.yrange else 1.0
+    return [amp, s.x_at_max, max(s.span / 6.0, 1e-6), max(s.span / 10.0, 1e-6)]
+
+
+def _guess_skew_normal(s):
+    amp = s.y_max - s.y_min if s.yrange else 1.0
+    return [amp, s.x_at_max, max(s.span / 6.0, 1e-6), 0.0]
+
+
+def _guess_fwhm(s):
+    amp = s.y_max - s.y_min if s.yrange else 1.0
+    sigma0 = s.span / 6.0 if s.span else 1.0
+    fwhm0 = sigma0 / 0.42466
+    return [amp, s.x_at_max, max(fwhm0, 1e-6)]
+
+
+def _guess_exgaussian(s):
+    amp = s.y_max - s.y_min if s.yrange else 1.0
+    return [amp, s.x_at_max, max(s.span / 8.0, 1e-6), max(s.span / 4.0, 1e-6)]
+
+
+def _guess_stretched_exponential(s):
+    amp = s.y[0] if s.y.size else 1.0
+    return [float(amp), max(s.span, 1.0), 1.0, float(s.y_min)]
+
+
+def _guess_step(s):
+    return [s.yrange or 1.0, s.x_mean, max(s.span / 4.0, 1e-6), float(s.y_mean)]
+
+
+def _guess_rational(s):
+    return [1.0, s.x_mean]
+
+
+def _guess_sinc(s):
+    amp = s.y_max - s.y_min if s.yrange else 1.0
+    return [amp, s.x_at_max, max(s.span / 6.0, 1e-6)]
+
+
+def _guess_exponential_rise(s):
+    amp = s.y_max - s.y_min if s.yrange else 1.0
+    return [amp, max(s.span / 3.0, 1e-6), float(s.y_min)]
+
+
+def _guess_double_exponential(s):
+    amp1 = s.y[0] if s.y.size else 1.0
+    return [float(amp1), max(s.span / 4.0, 1e-6), float(amp1) * 0.5, max(s.span, 1e-6)]
+
+
+def _guess_moffat(s):
+    amp = s.y_max - s.y_min if s.yrange else 1.0
+    return [amp, s.x_at_max, max(s.span / 6.0, 1e-6), 2.0]
+
+
+def _guess_gaussian_baseline(s):
+    sigma0 = s.span / 6.0 if s.span else 1.0
+    amp = s.y_max - s.y_min if s.yrange else 1.0
+    if s.x.size >= 2:
+        slope, intercept = np.polyfit(s.x, s.y, 1)
+        return [amp, s.x_at_max, max(sigma0, 1e-6), float(slope), float(intercept)]
+    return [amp, s.x_at_max, max(sigma0, 1e-6), 0.0, float(s.y_mean)]
+
+
+def _guess_bimodal_gaussian(s):
+    sigma0 = s.span / 6.0 if s.span else 1.0
+    amp = (s.y_max - s.y_min) / 2.0 if s.yrange else 1.0
+    return [amp, s.x_mean - s.span / 4.0, max(sigma0, 1e-6), amp, s.x_mean + s.span / 4.0, max(sigma0, 1e-6)]
+
+
+def _guess_quartic(s):
+    coeffs = np.polyfit(s.x, s.y, 4) if s.x.size >= 5 else [0.0, 0.0, 0.0, 1.0, s.y_mean]
+    return [float(v) for v in coeffs]
+
+
+def _guess_quintic(s):
+    coeffs = np.polyfit(s.x, s.y, 5) if s.x.size >= 6 else [0.0, 0.0, 0.0, 0.0, 1.0, s.y_mean]
+    return [float(v) for v in coeffs]
+
+
+_GUESSERS = {
+    "linear": _guess_linear,
+    "quadratic": _guess_quadratic,
+    "cubic": _guess_cubic,
+    "constant": _guess_constant,
+    "gaussian": _guess_gaussian,
+    "lorentzian": _guess_lorentzian,
+    "exponential": _guess_exponential,
+    "power_law": _guess_power_law,
+    "logistic": _guess_logistic,
+    "damped_oscillator": _guess_damped_oscillator,
+    "damped_sine": _guess_damped_sine,
+    "sine": _guess_sine,
+    "cosine": _guess_cosine,
+    "beat": _guess_beat,
+    "voigt": _guess_voigt,
+    "skew_normal": _guess_skew_normal,
+    "gaussian_fwhm": _guess_fwhm,
+    "lorentzian_fwhm": _guess_fwhm,
+    "exgaussian": _guess_exgaussian,
+    "stretched_exponential": _guess_stretched_exponential,
+    "tanh": _guess_step,
+    "arctan": _guess_step,
+    "rational": _guess_rational,
+    "sinc": _guess_sinc,
+    "exponential_rise": _guess_exponential_rise,
+    "double_exponential": _guess_double_exponential,
+    "moffat": _guess_moffat,
+    "gaussian_baseline": _guess_gaussian_baseline,
+    "bimodal_gaussian": _guess_bimodal_gaussian,
+    "quartic": _guess_quartic,
+    "quintic": _guess_quintic,
+}
 
 
 def _initial_guess(model, name, x, y, p0=None):
@@ -53,96 +278,10 @@ def _initial_guess(model, name, x, y, p0=None):
     x_mean = float(np.mean(x)) if x.size else 0.0
     x_at_max = float(x[int(np.argmax(y))]) if y.size else 0.0
 
-    if name == "linear":
-        if x.size >= 2:
-            slope, intercept = np.polyfit(x, y, 1)
-            return [float(slope), float(intercept)]
-        return [1.0, y_mean]
-    if name == "quadratic":
-        coeffs = np.polyfit(x, y, 2) if x.size >= 3 else [0.0, 1.0, y_mean]
-        return [float(v) for v in coeffs]
-    if name == "cubic":
-        coeffs = np.polyfit(x, y, 3) if x.size >= 4 else [0.0, 0.0, 1.0, y_mean]
-        return [float(v) for v in coeffs]
-    if name == "constant":
-        return [y_mean]
-    if name == "gaussian":
-        sigma0 = span / 6.0 if span else 1.0
-        amp = y_max - y_min if yrange else 1.0
-        return [amp, x_at_max, max(sigma0, 1e-6)]
-    if name == "lorentzian":
-        amp = y_max - y_min if yrange else 1.0
-        return [amp, x_at_max, max(span / 10.0, 1e-6)]
-    if name == "exponential":
-        amp = y[0] if y.size else 1.0
-        decay = 1.0 / max(span, 1.0)
-        positive = y > 0
-        if positive.sum() >= 2 and x.size >= 2:
-            slope, intercept = np.polyfit(x[positive], np.log(y[positive]), 1)
-            amp = float(np.exp(intercept))
-            decay = float(-slope)
-        return [float(amp), float(decay)]
-    if name == "power_law":
-        amp = max(y_max, 1e-6)
-        exponent = 1.0
-        positive = (x > 0) & (y > 0)
-        if positive.sum() >= 2:
-            slope, intercept = np.polyfit(np.log(x[positive]), np.log(y[positive]), 1)
-            amp = float(np.exp(intercept))
-            exponent = float(slope)
-        return [float(amp), float(exponent)]
-    if name == "logistic":
-        return [yrange or 1.0, x_mean, 1.0 / max(span, 1.0), y_min]
-    if name in {"sine", "cosine", "damped_sine", "damped_oscillator", "beat"}:
-        freq = 1.0 / max(span, 1.0)
-        amp = max(abs(y_min), abs(y_max), 1.0)
-        if x.size > 1:
-            dx = np.diff(x)
-            if np.all(dx > 0):
-                y_detrended = y - y_mean
-                zero_crossings = np.where(np.signbit(y_detrended[:-1]) != np.signbit(y_detrended[1:]))[0]
-                if zero_crossings.size >= 2:
-                    est_periods = np.diff(x[zero_crossings]) * 2.0
-                    period = float(np.median(est_periods)) if est_periods.size else span
-                    if period > 0:
-                        freq = 1.0 / period
-        if name == "damped_oscillator":
-            return [float(amp), 0.1 / max(span, 1.0), float(freq), 0.0]
-        if name == "damped_sine":
-            return [float(amp), 0.1 / max(span, 1.0), float(freq), 0.0, float(y_mean)]
-        if name == "sine":
-            return [float(amp), float(freq), 0.0, float(y_mean)]
-        if name == "cosine":
-            return [float(amp), float(freq), 0.0, float(y_mean)]
-        if name == "beat":
-            return [float(amp), float(freq), float(freq * 1.08), 0.0, float(y_mean)]
-    if name == "voigt":
-        amp = y_max - y_min if yrange else 1.0
-        return [amp, x_at_max, max(span / 6.0, 1e-6), max(span / 10.0, 1e-6)]
-    if name == "skew_normal":
-        amp = y_max - y_min if yrange else 1.0
-        return [amp, x_at_max, max(span / 6.0, 1e-6), 0.0]
-    if name in {"gaussian_fwhm", "lorentzian_fwhm"}:
-        amp = y_max - y_min if yrange else 1.0
-        sigma0 = span / 6.0 if span else 1.0
-        fwhm0 = sigma0 / 0.42466
-        return [amp, x_at_max, max(fwhm0, 1e-6)]
-    if name == "exgaussian":
-        amp = y_max - y_min if yrange else 1.0
-        return [amp, x_at_max, max(span / 8.0, 1e-6), max(span / 4.0, 1e-6)]
-    if name == "stretched_exponential":
-        amp = y[0] if y.size else 1.0
-        return [float(amp), max(span, 1.0), 1.0, float(y_min)]
-    if name in {"tanh", "arctan"}:
-        return [yrange or 1.0, x_mean, max(span / 4.0, 1e-6), float(y_mean)]
-    if name == "rational":
-        return [1.0, x_mean]
-    if name == "quartic":
-        coeffs = np.polyfit(x, y, 4) if x.size >= 5 else [0.0, 0.0, 0.0, 1.0, y_mean]
-        return [float(v) for v in coeffs]
-    if name == "quintic":
-        coeffs = np.polyfit(x, y, 5) if x.size >= 6 else [0.0, 0.0, 0.0, 0.0, 1.0, y_mean]
-        return [float(v) for v in coeffs]
+    stats = _GuessStats(x, y, span, yrange, y_min, y_max, y_mean, x_mean, x_at_max)
+    guesser = _GUESSERS.get(name)
+    if guesser is not None:
+        return guesser(stats)
     return [1.0] * len(param_names)
 
 
@@ -164,9 +303,9 @@ def _coerce_bounds(bounds, param_names):
     raise TypeError("bounds must be None, a (lower, upper) pair, or a dict keyed by parameter name")
 
 
-def _normalize_sigma(series: DataSeries, sigma=None, weights=None, ysigma=None, sigma_low=None, sigma_high=None, sigma_cov=None):
-    if ysigma is not None and sigma is None:
-        sigma = ysigma
+def _normalize_sigma(
+    series: DataSeries, sigma=None, weights=None, sigma_low=None, sigma_high=None, sigma_cov=None
+):
     if sigma is None and series.effective_sigma is not None:
         sigma = series.effective_sigma
     if sigma_low is None and series.sigma_low is not None:
@@ -178,7 +317,7 @@ def _normalize_sigma(series: DataSeries, sigma=None, weights=None, ysigma=None, 
     sigma = effective_sigma(sigma=sigma, sigma_low=sigma_low, sigma_high=sigma_high, sigma_cov=sigma_cov)
     if weights is not None:
         if sigma is not None:
-            raise ValueError("Pass either sigma/ysigma or weights, not both")
+            raise ValueError("Pass either sigma or weights, not both")
         weights = np.asarray(weights, dtype=float)
         sigma = np.where(weights > 0, 1.0 / np.sqrt(weights), np.inf)
     if sigma_cov is not None:
@@ -186,18 +325,37 @@ def _normalize_sigma(series: DataSeries, sigma=None, weights=None, ysigma=None, 
     return sigma, sigma_cov
 
 
-def _model_wrapper(model, param_names):
+def _model_wrapper(model):
     fn, model_name = get_model(model)
     if callable(model) and not isinstance(model, str):
         model_name = getattr(model, "__name__", "custom")
-    return fn, model_name, param_names or model_param_names(fn)
+    param_names = model_param_names(fn)
+    return fn, model_name, param_names
 
 
-def _fit_single(series: DataSeries, *, model="linear", p0=None, bounds=None, sigma=None, weights=None, ysigma=None, sigma_low=None, sigma_high=None, sigma_cov=None) -> FitResult:
-    fn, model_name, param_names = _model_wrapper(model, model_param_names(model))
+def _fit_single(
+    series: DataSeries,
+    *,
+    model="linear",
+    p0=None,
+    bounds=None,
+    sigma=None,
+    weights=None,
+    sigma_low=None,
+    sigma_high=None,
+    sigma_cov=None,
+) -> FitResult:
+    fn, model_name, param_names = _model_wrapper(model)
     x = np.asarray(series.x, dtype=float)
     y = np.asarray(series.y, dtype=float)
-    sigma, sigma_cov = _normalize_sigma(series, sigma=sigma, weights=weights, ysigma=ysigma, sigma_low=sigma_low, sigma_high=sigma_high, sigma_cov=sigma_cov)
+    sigma, sigma_cov = _normalize_sigma(
+        series,
+        sigma=sigma,
+        weights=weights,
+        sigma_low=sigma_low,
+        sigma_high=sigma_high,
+        sigma_cov=sigma_cov,
+    )
     p0_vec = np.asarray(_initial_guess(model, model_name, x, y, p0=p0), dtype=float)
     if p0_vec.size != len(param_names):
         p0_vec = np.resize(p0_vec, len(param_names)).astype(float)
@@ -225,6 +383,7 @@ def _fit_single(series: DataSeries, *, model="linear", p0=None, bounds=None, sig
     y_fit = np.asarray(fn(x, *popt), dtype=float)
     residual = y - y_fit
     dof = max(int(x.size - popt.size), 1)
+    is_weighted = sigma is not None or sigma_cov is not None
     if sigma_cov is not None:
         chi2 = float(np.sum(np.square(np.linalg.solve(chol, residual))))
     elif sigma is not None:
@@ -240,14 +399,29 @@ def _fit_single(series: DataSeries, *, model="linear", p0=None, bounds=None, sig
     else:
         cov = np.full((popt.size, popt.size), np.nan)
 
-    params = {name: float(value) for name, value in zip(param_names, popt)}
+    diag_cov = np.diag(cov) if cov.ndim == 2 else np.asarray([])
+    if np.any(~np.isfinite(diag_cov)):
+        warnings.warn(
+            "Covariance matrix is singular; parameter uncertainties are unreliable.",
+            UserWarning,
+            stacklevel=3,
+        )
+
+    params = {name: float(value) for name, value in zip(param_names, popt, strict=True)}
     uncertainties = {
         name: float(np.sqrt(max(float(value), 0.0)))
-        for name, value in zip(param_names, np.diag(cov))
+        for name, value in zip(param_names, diag_cov, strict=True)
     }
     p_value = float(chi2_dist.sf(chi2, dof)) if dof > 0 and np.isfinite(chi2) else float("nan")
 
     # ── actionable warnings for students ─────────────────────
+    if not is_weighted:
+        warnings.warn(
+            "No uncertainties provided; 'reduced_chi2' is the unweighted SSR per "
+            "degree of freedom, not a true reduced χ².",
+            UserWarning,
+            stacklevel=3,
+        )
     if not opt.success:
         warnings.warn(
             f"Fit '{model_name}' did NOT converge. "
@@ -257,7 +431,7 @@ def _fit_single(series: DataSeries, *, model="linear", p0=None, bounds=None, sig
             UserWarning,
             stacklevel=3,
         )
-    elif sigma is not None and reduced_chi2 > 10:
+    elif is_weighted and reduced_chi2 > 10:
         warnings.warn(
             f"reduced chi2 = {reduced_chi2:.1f} is much larger than 1. "
             f"The model '{model_name}' may not describe the data well, "
@@ -283,10 +457,25 @@ def _fit_single(series: DataSeries, *, model="linear", p0=None, bounds=None, sig
         y_fit=y_fit,
         series=series,
         model=fn,
+        is_weighted=is_weighted,
     )
 
 
-def fit(x, y=None, *, model="linear", p0=None, bounds=None, sigma=None, weights=None, ysigma=None, sigma_low=None, sigma_high=None, sigma_cov=None, label="", **kwargs):
+def fit(
+    x,
+    y=None,
+    *,
+    model="linear",
+    p0=None,
+    bounds=None,
+    sigma=None,
+    weights=None,
+    sigma_low=None,
+    sigma_high=None,
+    sigma_cov=None,
+    label="",
+    **kwargs,
+):
     """Fit a model to data and return parameter estimates with uncertainties.
 
     This is the main entry point. The first argument can be arrays,
@@ -328,59 +517,23 @@ def fit(x, y=None, *, model="linear", p0=None, bounds=None, sigma=None, weights=
         ``residuals``.
     """
     if kwargs:
-        # Preserve forwards compatibility for optional callers while keeping the core API explicit.
-        if "ysigma" in kwargs and ysigma is None:
-            ysigma = kwargs.pop("ysigma")
-        if "sigma" in kwargs and sigma is None:
-            sigma = kwargs.pop("sigma")
-        if kwargs:
-            unexpected = ", ".join(sorted(kwargs))
-            raise TypeError(f"Unexpected keyword arguments: {unexpected}")
+        unexpected = ", ".join(sorted(kwargs))
+        raise TypeError(f"Unexpected keyword arguments: {unexpected}")
 
-    series = _coerce_series_input(x, y, sigma=sigma, sigma_low=sigma_low, sigma_high=sigma_high, sigma_cov=sigma_cov, label=label)
-    return _fit_single(series, model=model, p0=p0, bounds=bounds, sigma=sigma, weights=weights, ysigma=ysigma, sigma_low=sigma_low, sigma_high=sigma_high, sigma_cov=sigma_cov)
-
-
-def quick_fit(x, y=None, **kwargs):
-    """Fit a model with automatic initial guesses.
-
-    Convenience alias for :func:`fit`. All keyword arguments
-    (``model``, ``sigma``, ``p0``, ``bounds``, …) are forwarded.
-
-    Parameters
-    ----------
-    x : array-like or DataSeries or Path or str
-        x-values, a DataSeries, or a CSV path.
-    y : array-like, optional
-        y-values.
-
-    Returns
-    -------
-    FitResult
-    """
-    return fit(x, y, **kwargs)
-
-
-def fit_to_model(x, y=None, **kwargs):
-    """Fit a model, emphasising the model choice at the call site.
-
-    Alias for :func:`fit` that reads naturally when you already know
-    which model you want to use::
-
-        result = fit_to_model("data.csv", model="exponential")
-
-    Parameters
-    ----------
-    x : array-like or DataSeries or Path or str
-        x-values, a DataSeries, or a CSV path.
-    y : array-like, optional
-        y-values.
-
-    Returns
-    -------
-    FitResult
-    """
-    return fit(x, y, **kwargs)
+    series = _coerce_series_input(
+        x, y, sigma=sigma, sigma_low=sigma_low, sigma_high=sigma_high, sigma_cov=sigma_cov, label=label
+    )
+    return _fit_single(
+        series,
+        model=model,
+        p0=p0,
+        bounds=bounds,
+        sigma=sigma,
+        weights=weights,
+        sigma_low=sigma_low,
+        sigma_high=sigma_high,
+        sigma_cov=sigma_cov,
+    )
 
 
 def fit_multi(dataset: Iterable[DataSeries] | Dataset, *, model="linear", p0=None, bounds=None, **kwargs):
@@ -403,14 +556,8 @@ def fit_multi(dataset: Iterable[DataSeries] | Dataset, *, model="linear", p0=Non
     list of FitResult
         One result per input series.
     """
-    if isinstance(dataset, Dataset):
-        series_list = list(dataset)
-    else:
-        series_list = list(dataset)
-    return [
-        _fit_single(series, model=model, p0=p0, bounds=bounds, **kwargs)
-        for series in series_list
-    ]
+    series_list = list(dataset)
+    return [_fit_single(series, model=model, p0=p0, bounds=bounds, **kwargs) for series in series_list]
 
 
-__all__ = ["fit", "quick_fit", "fit_to_model", "fit_multi"]
+__all__ = ["fit", "fit_multi"]

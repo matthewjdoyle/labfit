@@ -43,10 +43,11 @@ import math
 
 import matplotlib
 import numpy as np
+import pytest
 
 matplotlib.use("Agg")
 
-from labfit import fit, FitResult
+from labfit import FitResult, fit
 
 
 def test_wrong_model_gives_high_chi2_and_low_pvalue():
@@ -62,7 +63,8 @@ def test_wrong_model_gives_high_chi2_and_low_pvalue():
     y = 2.0 * x**2 + 1.0 + rng.normal(0, 0.05, size=x.size)
     sigma = np.full_like(x, 0.05)
 
-    result = fit(x, y, model="linear", sigma=sigma)
+    with pytest.warns(UserWarning, match="reduced chi2"):
+        result = fit(x, y, model="linear", sigma=sigma)
 
     assert isinstance(result, FitResult)
     assert result.success  # optimizer terminated normally
@@ -82,7 +84,8 @@ def test_exponential_fit_to_linear_data():
     y = 2.0 * x + 1.0 + rng.normal(0, 0.1, size=x.size)
     sigma = np.full_like(x, 0.1)
 
-    result = fit(x, y, model="exponential", sigma=sigma)
+    with pytest.warns(UserWarning, match="reduced chi2"):
+        result = fit(x, y, model="exponential", sigma=sigma)
 
     assert result.success
     assert result.reduced_chi2 > 5  # wrong model
@@ -129,7 +132,10 @@ def test_severely_constrained_bounds_can_prevent_convergence():
     # Pin amplitude to a tiny value and sigma to a tiny value —
     # impossible to fit a Gaussian peak this way
     result = fit(
-        x, y, model="gaussian", sigma=sigma,
+        x,
+        y,
+        model="gaussian",
+        sigma=sigma,
         p0={"amplitude": 1e-6, "mean": 0.0, "sigma": 1e-6},
         bounds={
             "amplitude": (1e-8, 1e-5),
@@ -162,17 +168,16 @@ def test_custom_model_with_singularity_gives_nan_covariance():
 
     # Use a sensible initial guess and bounds to keep x0 well away
     # from the data region
-    result = fit(x, y, model="rational", sigma=sigma,
-                 p0={"amplitude": 2.0, "x0": 3.0},
-                 bounds={"x0": (2.0, 4.0)})
+    result = fit(
+        x, y, model="rational", sigma=sigma, p0={"amplitude": 2.0, "x0": 3.0}, bounds={"x0": (2.0, 4.0)}
+    )
 
     assert result.success
     assert abs(result.params["amplitude"] - 2.0) < 0.2
     assert abs(result.params["x0"] - 3.0) < 0.1
 
     # Deliberately start with the pole inside the data range
-    result2 = fit(x, y, model="rational", sigma=sigma,
-                  p0={"amplitude": 1.0, "x0": 7.0})
+    result2 = fit(x, y, model="rational", sigma=sigma, p0={"amplitude": 1.0, "x0": 7.0})
 
     # The optimizer may still converge to a local minimum far from
     # the true parameters, or the covariance may be ill-conditioned
@@ -198,17 +203,23 @@ def test_fit_result_str_repr():
     assert "reduced chi2" in s
     assert "p " in s
 
-    # repr() should match str()
-    assert repr(result) == s
+    # repr() should be a concise single-line representation, distinct from str()
+    r = repr(result)
+    assert r != s
+    assert "FitResult(" in r
+    assert "model_name=" in r
+    assert "reduced_chi2=" in r
 
     # Test the warnings path via non-convergence (checks __str__ with
     # success=False branch)
     bad = fit(
-        x, y, model="gaussian", sigma=sigma,
+        x,
+        y,
+        model="gaussian",
+        sigma=sigma,
         p0={"amplitude": 1e-99, "mean": 0.0, "sigma": 1e-99},
         bounds={"amplitude": (1e-100, 1e-99), "sigma": (1e-100, 1e-99)},
     )
     if not bad.success:
         s = str(bad)
         assert "did NOT converge" in s
-

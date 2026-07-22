@@ -1,6 +1,6 @@
 .. LabFit documentation master file.
 
-   Homepage: https://matthewdoyle.github.io/labfit/
+   Homepage: https://matthewd0yle.com/labfit/
    Contact: matt@matthewd0yle.com
    License: MIT
 

@@ -28,13 +28,17 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r docs/requirements.txt pytest pytest-cov ruff mypy
+          pip install -r docs/requirements.txt
+          pip install -e ".[dev]"
 
       - name: Lint
-        run: ruff check labfit tests
+        run: ruff check labfit tests docs examples benchmarks
+
+      - name: Format check
+        run: ruff format --check labfit tests docs examples benchmarks
 
       - name: Type check
-        run: mypy --disable-error-code import-untyped labfit
+        run: mypy labfit
 
       - name: Run tests with coverage
         run: pytest -q --cov=labfit --cov-report=term-missing --cov-fail-under=90

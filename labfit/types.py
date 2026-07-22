@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Optional, Sequence
+from typing import Any
 
 import numpy as np
 
@@ -28,26 +29,34 @@ class DataSeries:
     sigma: MaybeArray | AsymmetricError | None = None
     y_err: MaybeArray | AsymmetricError | None = None
     label: str = ""
-    sigma_low: Optional[np.ndarray] = None
-    sigma_high: Optional[np.ndarray] = None
-    sigma_cov: Optional[np.ndarray] = None
+    sigma_low: np.ndarray | None = None
+    sigma_high: np.ndarray | None = None
+    sigma_cov: np.ndarray | None = None
 
     def __post_init__(self) -> None:
         self.x = np.asarray(self.x, dtype=float)
         self.y = np.asarray(self.y, dtype=float)
-        if self.y_err is not None and self.sigma is None:
-            self.sigma = self.y_err
-        elif self.y_err is None:
-            self.y_err = self.sigma
-        elif self.sigma is not None:
-            sigma_arr = np.asarray(self.sigma if not isinstance(self.sigma, AsymmetricError) else self.sigma.effective, dtype=float)
-            y_err_arr = np.asarray(self.y_err if not isinstance(self.y_err, AsymmetricError) else self.y_err.effective, dtype=float)
-            if sigma_arr.shape != y_err_arr.shape or not np.allclose(sigma_arr, y_err_arr, equal_nan=False):
+
+        # sigma is canonical; y_err is an alias that mirrors it
+        if self.sigma is not None and self.y_err is not None:
+            sigma_eff = (
+                self.sigma.effective
+                if isinstance(self.sigma, AsymmetricError)
+                else np.asarray(self.sigma, dtype=float)
+            )
+            y_err_eff = (
+                self.y_err.effective
+                if isinstance(self.y_err, AsymmetricError)
+                else np.asarray(self.y_err, dtype=float)
+            )
+            if not np.allclose(sigma_eff, y_err_eff):
                 raise ValueError("sigma and y_err must describe the same uncertainties")
+        elif self.sigma is None and self.y_err is not None:
+            self.sigma = self.y_err
+        self.y_err = self.sigma
+
         if self.sigma is not None and not isinstance(self.sigma, AsymmetricError):
             self.sigma = np.asarray(self.sigma, dtype=float)
-        if self.y_err is not None and not isinstance(self.y_err, AsymmetricError):
-            self.y_err = np.asarray(self.y_err, dtype=float)
         if self.sigma_low is not None:
             self.sigma_low = np.asarray(self.sigma_low, dtype=float)
         if self.sigma_high is not None:
@@ -91,7 +100,6 @@ class DataSeries:
                 raise ValueError(f"{name} must be non-negative")
 
         _validate_error_array("sigma", self.sigma, allow_asymmetric=True)
-        _validate_error_array("y_err", self.y_err, allow_asymmetric=True)
         _validate_error_array("sigma_low", self.sigma_low)
         _validate_error_array("sigma_high", self.sigma_high)
 
@@ -103,12 +111,9 @@ class DataSeries:
             return np.sqrt((self.sigma_low**2 + self.sigma_high**2) / 2.0)
         if isinstance(self.sigma, AsymmetricError):
             return self.sigma.effective
-        if isinstance(self.y_err, AsymmetricError):
-            return self.y_err.effective
-        if self.sigma is None and self.y_err is None:
+        if self.sigma is None:
             return None
-        source = self.sigma if self.sigma is not None else self.y_err
-        return np.asarray(source, dtype=float)
+        return np.asarray(self.sigma, dtype=float)
 
     @property
     def y_error(self) -> np.ndarray | None:
@@ -122,7 +127,6 @@ class DataSeries:
             x=self.x,
             y=self.y,
             sigma=self.sigma,
-            y_err=self.y_err,
             label=label,
             sigma_low=self.sigma_low,
             sigma_high=self.sigma_high,
@@ -136,9 +140,6 @@ Series = DataSeries
 @dataclass
 class Dataset:
     series: list[DataSeries] = field(default_factory=list)
-
-    def __init__(self, series: Iterable[DataSeries] | None = None):
-        self.series = list(series or [])
 
     def __len__(self) -> int:
         return len(self.series)
@@ -160,19 +161,20 @@ class Dataset:
 class FitResult:
     reduced_chi2: float
     params: dict[str, float]
-    covariance: Optional[np.ndarray] = None
+    covariance: np.ndarray | None = None
     p_value: float = float("nan")
     uncertainties: dict[str, float] = field(default_factory=dict)
     success: bool = True
     message: str = ""
     model_name: str = ""
     param_names: tuple[str, ...] = field(default_factory=tuple)
-    x: Optional[np.ndarray] = None
-    y: Optional[np.ndarray] = None
-    sigma: Optional[np.ndarray] = None
-    y_fit: Optional[np.ndarray] = None
-    series: Optional[DataSeries] = None
+    x: np.ndarray | None = None
+    y: np.ndarray | None = None
+    sigma: np.ndarray | None = None
+    y_fit: np.ndarray | None = None
+    series: DataSeries | None = None
     model: Any = None
+    is_weighted: bool = True
 
     def __post_init__(self) -> None:
         if self.covariance is not None:
@@ -193,8 +195,7 @@ class FitResult:
             names = self.param_names or tuple(self.params.keys())
             diag = np.diag(self.covariance) if self.covariance.ndim == 2 else np.asarray([])
             self.uncertainties = {
-                name: float(np.sqrt(max(float(value), 0.0)))
-                for name, value in zip(names, diag)
+                name: float(np.sqrt(max(float(value), 0.0))) for name, value in zip(names, diag, strict=True)
             }
 
     def __str__(self) -> str:
@@ -235,7 +236,11 @@ class FitResult:
         return "\n".join(lines)
 
     def __repr__(self) -> str:
-        return self.__str__()
+        return (
+            f"FitResult(model_name={self.model_name!r}, "
+            f"reduced_chi2={self.reduced_chi2:.4g}, "
+            f"success={self.success})"
+        )
 
     @property
     def parameter_uncertainties(self) -> dict[str, float]:

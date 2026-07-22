@@ -9,12 +9,12 @@ import platform
 import subprocess
 import sys
 import tempfile
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import mean, stdev
 from time import perf_counter_ns
-from typing import Iterable
 
 import matplotlib
 
@@ -28,7 +28,6 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from labfit import DataSeries, fit_curve, plot_fit  # noqa: E402
-
 
 OKABE_ITO = [
     "#0072B2",
@@ -49,7 +48,9 @@ MODEL_SPECS = {
     },
     "gaussian": {
         "x": lambda n: np.linspace(-3.0, 3.0, n),
-        "y": lambda x, rng: 3.2 * np.exp(-0.5 * ((x - 0.35) / 0.65) ** 2) + 0.35 + rng.normal(0.0, 0.015, size=x.size),
+        "y": lambda x, rng: (
+            3.2 * np.exp(-0.5 * ((x - 0.35) / 0.65) ** 2) + 0.35 + rng.normal(0.0, 0.015, size=x.size)
+        ),
         "sigma": lambda x: np.full_like(x, 0.015, dtype=float),
     },
 }
@@ -94,9 +95,10 @@ class AggregateRow:
 
 
 def _git_sha() -> str:
+    repo = Path(__file__).resolve().parents[1]
     try:
         value = subprocess.run(
-            ["git", "-C", "/home/matt/projects/labfit", "rev-parse", "HEAD"],
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
             check=True,
             capture_output=True,
             text=True,
@@ -115,7 +117,9 @@ def _version_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
 
 
-def _make_dataset(model: str, n_points: int, *, seed: int) -> tuple[DataSeries, np.ndarray, np.ndarray, np.ndarray]:
+def _make_dataset(
+    model: str, n_points: int, *, seed: int
+) -> tuple[DataSeries, np.ndarray, np.ndarray, np.ndarray]:
     spec = MODEL_SPECS[model]
     rng = np.random.default_rng(seed)
     x = np.asarray(spec["x"](n_points), dtype=float)
@@ -150,7 +154,18 @@ def _stable_stats(values: Iterable[float]) -> tuple[float, float, float, float, 
     return avg, med, spread, max(0.0, med - margin), med + margin, q1, q3
 
 
-def _record_rows(rows: list[BenchmarkRow], *, operation: str, model: str, n_points: int, show_residuals: bool, timings: list[float], run_id: str, timestamp_utc: str, short_git_sha: str) -> None:
+def _record_rows(
+    rows: list[BenchmarkRow],
+    *,
+    operation: str,
+    model: str,
+    n_points: int,
+    show_residuals: bool,
+    timings: list[float],
+    run_id: str,
+    timestamp_utc: str,
+    short_git_sha: str,
+) -> None:
     for repetition, duration_ms in enumerate(timings, start=1):
         rows.append(
             BenchmarkRow(
@@ -172,7 +187,18 @@ def _record_rows(rows: list[BenchmarkRow], *, operation: str, model: str, n_poin
         )
 
 
-def _benchmark_fit(model: str, n_points: int, *, repeats: int, warmup: int, seed: int, run_id: str, timestamp_utc: str, short_git_sha: str, rows: list[BenchmarkRow]) -> tuple[DataSeries, np.ndarray, np.ndarray, np.ndarray, list[float]]:
+def _benchmark_fit(
+    model: str,
+    n_points: int,
+    *,
+    repeats: int,
+    warmup: int,
+    seed: int,
+    run_id: str,
+    timestamp_utc: str,
+    short_git_sha: str,
+    rows: list[BenchmarkRow],
+) -> tuple[DataSeries, np.ndarray, np.ndarray, np.ndarray, list[float]]:
     series, x, y, sigma = _make_dataset(model, n_points, seed=seed)
     for _ in range(warmup):
         fit_curve(model, x, y, sigma)
@@ -195,7 +221,20 @@ def _benchmark_fit(model: str, n_points: int, *, repeats: int, warmup: int, seed
     return series, x, y, sigma, timings
 
 
-def _benchmark_plot(result, *, show_residuals: bool, repeats: int, warmup: int, scratch_dir: Path, run_id: str, timestamp_utc: str, short_git_sha: str, model: str, n_points: int, rows: list[BenchmarkRow]) -> list[float]:
+def _benchmark_plot(
+    result,
+    *,
+    show_residuals: bool,
+    repeats: int,
+    warmup: int,
+    scratch_dir: Path,
+    run_id: str,
+    timestamp_utc: str,
+    short_git_sha: str,
+    model: str,
+    n_points: int,
+    rows: list[BenchmarkRow],
+) -> list[float]:
     tmp_path = scratch_dir / f"{model}-{n_points}-{int(show_residuals)}.png"
     for _ in range(warmup):
         plot = plot_fit(result=result, show_residuals=show_residuals, title=f"{model} ({n_points} pts)")
@@ -204,6 +243,7 @@ def _benchmark_plot(result, *, show_residuals: bool, repeats: int, warmup: int, 
 
     timings: list[float] = []
     for _ in range(repeats):
+
         def _render() -> None:
             plot = plot_fit(result=result, show_residuals=show_residuals, title=f"{model} ({n_points} pts)")
             plot.save(tmp_path, dpi=300, bbox_inches="tight")
@@ -331,7 +371,9 @@ def _plot_scaling(aggregates: list[AggregateRow], output_dir: Path) -> dict[str,
     return _save_figure(fig, output_dir / "scaling_curve")
 
 
-def _plot_distribution(aggregates: list[AggregateRow], rows: list[BenchmarkRow], output_dir: Path) -> dict[str, str]:
+def _plot_distribution(
+    aggregates: list[AggregateRow], rows: list[BenchmarkRow], output_dir: Path
+) -> dict[str, str]:
     fig, ax = plt.subplots(figsize=(5.2, 3.6))
     largest = max(row.n_points for row in rows)
     labels: list[str] = []
@@ -353,7 +395,7 @@ def _plot_distribution(aggregates: list[AggregateRow], rows: list[BenchmarkRow],
 
     bp = ax.boxplot(samples, patch_artist=True, showmeans=True)
     ax.set_xticks(range(1, len(labels) + 1), labels)
-    for patch, color in zip(bp["boxes"], OKABE_ITO):
+    for patch, color in zip(bp["boxes"], OKABE_ITO, strict=False):
         patch.set_facecolor(color)
         patch.set_alpha(0.28)
     for median_line in bp["medians"]:
@@ -388,7 +430,10 @@ def _plot_comparison(aggregates: list[AggregateRow], output_dir: Path) -> dict[s
         match = next(
             row
             for row in aggregates
-            if row.operation == operation and row.model == model and row.n_points == target_size and row.show_residuals == show_residuals
+            if row.operation == operation
+            and row.model == model
+            and row.n_points == target_size
+            and row.show_residuals == show_residuals
         )
         label = f"{operation}\n{model}" + ("\n+ residuals" if show_residuals else "")
         categories.append(label)
@@ -420,7 +465,15 @@ def _write_json(path: Path, payload: dict[str, object]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def _write_summary_markdown(path: Path, *, run_id: str, sha: str, rows: list[BenchmarkRow], aggregates: list[AggregateRow], figure_paths: dict[str, dict[str, str]]) -> None:
+def _write_summary_markdown(
+    path: Path,
+    *,
+    run_id: str,
+    sha: str,
+    rows: list[BenchmarkRow],
+    aggregates: list[AggregateRow],
+    figure_paths: dict[str, dict[str, str]],
+) -> None:
     fit_rows = [row for row in aggregates if row.operation == "fit_curve"]
     plot_rows = [row for row in aggregates if row.operation == "plot_fit"]
     fastest_fit = min(fit_rows, key=lambda row: row.median_ms)
@@ -434,8 +487,15 @@ def _write_summary_markdown(path: Path, *, run_id: str, sha: str, rows: list[Ben
         f"- Aggregates: `{len(aggregates)}`",
         "",
         "## Highlights",
-        f"- Fastest fit_curve median: `{fastest_fit.model}` at `{fastest_fit.n_points}` points → `{fastest_fit.median_ms:.3f} ms`",
-        f"- Slowest plot_fit median: `{slowest_plot.model}` at `{slowest_plot.n_points}` points `{'+ residuals' if slowest_plot.show_residuals else ''}` → `{slowest_plot.median_ms:.3f} ms`",
+        (
+            f"- Fastest fit_curve median: `{fastest_fit.model}` at `{fastest_fit.n_points}` points"
+            f" → `{fastest_fit.median_ms:.3f} ms`"
+        ),
+        (
+            f"- Slowest plot_fit median: `{slowest_plot.model}` at `{slowest_plot.n_points}` points"
+            f" `{'+ residuals' if slowest_plot.show_residuals else ''}`"
+            f" → `{slowest_plot.median_ms:.3f} ms`"
+        ),
         "",
         "## Figure files",
     ]
@@ -487,8 +547,7 @@ def run_benchmarks(*, output_root: Path, sizes: Iterable[int], repeats: int, war
                 )
 
     aggregates = _aggregate(rows)
-    # Re-apply benchmark style — plot_fit() calls inside the loop
-    # overwrote global rcParams with STIX serif via use_publication_style()
+    # Re-apply benchmark style — plot_fit() may have changed rcParams
     _figure_style()
     csv_path = run_dir / "benchmark_runs.csv"
     json_path = run_dir / "benchmark_results.json"
@@ -499,7 +558,14 @@ def run_benchmarks(*, output_root: Path, sizes: Iterable[int], repeats: int, war
     figure_paths["scaling_curve"] = _plot_scaling(aggregates, run_dir)
     figure_paths["latency_distribution"] = _plot_distribution(aggregates, rows, run_dir)
     figure_paths["comparison_bar_chart"] = _plot_comparison(aggregates, run_dir)
-    _write_summary_markdown(summary_md, run_id=run_id, sha=short_git_sha, rows=rows, aggregates=aggregates, figure_paths=figure_paths)
+    _write_summary_markdown(
+        summary_md,
+        run_id=run_id,
+        sha=short_git_sha,
+        rows=rows,
+        aggregates=aggregates,
+        figure_paths=figure_paths,
+    )
 
     payload = {
         "benchmark_version": "1",
@@ -547,7 +613,9 @@ def run_benchmarks(*, output_root: Path, sizes: Iterable[int], repeats: int, war
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Benchmark the LabFit Python suite and render publication-ready plots.")
+    parser = argparse.ArgumentParser(
+        description="Benchmark the LabFit Python suite and render publication-ready plots."
+    )
     parser.add_argument(
         "--output-dir",
         type=Path,
@@ -561,9 +629,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=list(DEFAULT_SIZES),
         help="Dataset sizes (in points) to benchmark.",
     )
-    parser.add_argument("--repeats", type=int, default=DEFAULT_REPEATS, help="Timed repetitions per workload.")
+    parser.add_argument(
+        "--repeats", type=int, default=DEFAULT_REPEATS, help="Timed repetitions per workload."
+    )
     parser.add_argument("--warmup", type=int, default=DEFAULT_WARMUP, help="Warmup iterations per workload.")
-    parser.add_argument("--seed", type=int, default=20260606, help="Deterministic random seed for synthetic data.")
+    parser.add_argument(
+        "--seed", type=int, default=20260606, help="Deterministic random seed for synthetic data."
+    )
     return parser
 
 

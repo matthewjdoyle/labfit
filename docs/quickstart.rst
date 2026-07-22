@@ -47,9 +47,9 @@ CSV → fit → plot (10 seconds)
 
 .. code-block:: python
 
-   from labfit import fit_to_model, plot_fit
+   from labfit import fit, plot_fit
 
-   result = fit_to_model("mydata.csv", model="exponential")
+   result = fit("mydata.csv", model="exponential")
    plot_fit(result)
    print(f"reduced chi^2 = {result.reduced_chi2:.3f}")
 
@@ -58,21 +58,21 @@ One file, three lines, done.
 Working with arrays directly
 ----------------------------
 
-If your data is already in memory, use :func:`labfit.quick_fit` or :func:`labfit.fit`:
+If your data is already in memory, use :func:`labfit.fit`:
 
 .. code-block:: python
 
    import numpy as np
-   from labfit import quick_fit, plot_fit
+   from labfit import fit, plot_fit
 
    rng = np.random.default_rng(42)
    x = np.linspace(-5.0, 5.0, 200)
    y = 3.0 * np.exp(-0.5 * ((x - 0.5) / 1.2) ** 2) + rng.normal(0, 0.05, size=x.size)
 
-   result = quick_fit(x, y, model="gaussian")
+   result = fit(x, y, model="gaussian")
    plot_fit(result, show_residuals=True)
 
-:func:`labfit.quick_fit` uses automatic initial-guess heuristics for all
+:func:`labfit.fit` uses automatic initial-guess heuristics for all
 built-in models so you don't have to think about it.
 
 Choosing a built-in model
@@ -82,10 +82,10 @@ Pass any model name as the ``model`` argument:
 
 .. code-block:: python
 
-   result = quick_fit(x, y, model="linear")
-   result = quick_fit(x, y, model="gaussian")
-   result = quick_fit(x, y, model="bimodal_gaussian")
-   result = quick_fit(x, y, model="damped_oscillator")
+   result = fit(x, y, model="linear")
+   result = fit(x, y, model="gaussian")
+   result = fit(x, y, model="bimodal_gaussian")
+   result = fit(x, y, model="damped_oscillator")
 
 All available names are in :const:`labfit.models.MODEL_NAMES`:
 
@@ -105,7 +105,7 @@ local minima. Provide it as a dict keyed by parameter name:
 
 .. code-block:: python
 
-   result = quick_fit(
+   result = fit(
        x, y, model="gaussian",
        p0={"amplitude": 3.0, "mean": 0.5, "sigma": 1.0},
    )
@@ -130,7 +130,7 @@ Each bound is a ``(lower, upper)`` tuple; use ``None`` for unbounded:
 
 .. code-block:: python
 
-   result = quick_fit(
+   result = fit(
        x, y, model="gaussian",
        p0={"amplitude": 3.0, "mean": 0.0, "sigma": 1.0},
        bounds={
@@ -151,7 +151,7 @@ their uncertainties, and a goodness-of-fit metric.
 
 .. code-block:: python
 
-   result = quick_fit(x, y, model="gaussian")
+   result = fit(x, y, model="gaussian")
 
    # Fitted values
    print(result.params["amplitude"])         # e.g. 2.987

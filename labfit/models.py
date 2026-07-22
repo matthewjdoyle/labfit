@@ -1,43 +1,58 @@
 from __future__ import annotations
 
+import functools
+import inspect
 from collections import OrderedDict
-from typing import Callable
+from collections.abc import Callable
 
 import numpy as np
 from scipy.special import erfc, voigt_profile
 from scipy.stats import skewnorm
 
 
+def _as_x(func):
+    """Decorator that converts the first argument ``x`` to a float ndarray."""
+
+    @functools.wraps(func)
+    def wrapper(x, *args, **kwargs):
+        x = np.asarray(x, dtype=float)
+        return func(x, *args, **kwargs)
+
+    return wrapper
+
+
+@_as_x
 def constant(x, level):
     """Horizontal line at a fixed y-value."""
-    return np.full_like(np.asarray(x, dtype=float), level, dtype=float)
+    return np.full_like(x, level, dtype=float)
 
 
+@_as_x
 def linear(x, slope, intercept):
     """Straight line with constant gradient."""
-    x = np.asarray(x, dtype=float)
     return slope * x + intercept
 
 
+@_as_x
 def quadratic(x, a, b, c):
     """Second-degree polynomial (parabola)."""
-    x = np.asarray(x, dtype=float)
     return a * x**2 + b * x + c
 
 
+@_as_x
 def cubic(x, a, b, c, d):
     """Third-degree polynomial."""
-    x = np.asarray(x, dtype=float)
     return ((a * x + b) * x + c) * x + d
 
 
+@_as_x
 def gaussian(x, amplitude, mean, sigma):
     """Symmetric bell-shaped peak (normal distribution)."""
-    x = np.asarray(x, dtype=float)
     sigma = np.asarray(sigma, dtype=float)
     return amplitude * np.exp(-0.5 * ((x - mean) / sigma) ** 2)
 
 
+@_as_x
 def lorentzian(x, amplitude, center, gamma):
     """Peak with a narrower core and heavier tails than a Gaussian.
 
@@ -45,24 +60,24 @@ def lorentzian(x, amplitude, center, gamma):
     spectroscopy for natural line shapes and in particle physics for
     resonance profiles.
     """
-    x = np.asarray(x, dtype=float)
     gamma = np.asarray(gamma, dtype=float)
     return amplitude * (gamma**2 / ((x - center) ** 2 + gamma**2))
 
 
+@_as_x
 def exponential(x, amplitude, decay):
     """Exponential decay starting from ``amplitude`` at ``x = 0``."""
-    x = np.asarray(x, dtype=float)
     return amplitude * np.exp(-decay * x)
 
 
+@_as_x
 def power_law(x, amplitude, exponent):
     """Power-law scaling with a variable exponent."""
-    x = np.asarray(x, dtype=float)
     with np.errstate(divide="ignore", invalid="ignore"):
         return amplitude * np.power(x, exponent)
 
 
+@_as_x
 def logistic(x, amplitude, x0, k, baseline=0.0):
     """Sigmoidal curve with a tunable steepness.
 
@@ -70,42 +85,42 @@ def logistic(x, amplitude, x0, k, baseline=0.0):
     centred at ``x0``. Used for population growth, dose-response curves,
     and phase transitions with a continuous order parameter.
     """
-    x = np.asarray(x, dtype=float)
     return baseline + amplitude / (1.0 + np.exp(-k * (x - x0)))
 
 
+@_as_x
 def sine(x, amplitude, frequency, phase, offset=0.0):
     """Sinusoidal oscillation with tunable frequency and phase."""
-    x = np.asarray(x, dtype=float)
     return offset + amplitude * np.sin(2.0 * np.pi * frequency * x + phase)
 
 
+@_as_x
 def cosine(x, amplitude, frequency, phase, offset=0.0):
     """Cosinusoidal oscillation with tunable frequency and phase."""
-    x = np.asarray(x, dtype=float)
     return offset + amplitude * np.cos(2.0 * np.pi * frequency * x + phase)
 
 
+@_as_x
 def damped_oscillator(x, amplitude, damping, frequency, phase):
     """Oscillation that decays exponentially (cosine form).
 
     Represents a harmonic oscillator with friction, such as a swinging
     pendulum subject to air resistance or an RLC circuit with resistance.
     """
-    x = np.asarray(x, dtype=float)
     return amplitude * np.exp(-damping * x) * np.cos(2.0 * np.pi * frequency * x + phase)
 
 
+@_as_x
 def damped_sine(x, amplitude, damping, frequency, phase, offset=0.0):
     """Oscillation that decays exponentially (sine form).
 
     Identical in form to the damped oscillator but uses sine instead of
     cosine. Suitable when the signal starts at the equilibrium point.
     """
-    x = np.asarray(x, dtype=float)
     return offset + amplitude * np.exp(-damping * x) * np.sin(2.0 * np.pi * frequency * x + phase)
 
 
+@_as_x
 def sinc(x, amplitude, center, width):
     """Central peak with oscillating sidelobes.
 
@@ -114,13 +129,13 @@ def sinc(x, amplitude, center, width):
     signal processing (ideal low-pass filter response), and Fourier
     optics.
     """
-    x = np.asarray(x, dtype=float)
     u = np.pi * (x - center) / width
     with np.errstate(invalid="ignore"):
         return amplitude * np.sinc(u / np.pi)
     # np.sinc(x) = sin(pi*x) / (pi*x), so np.sinc(u/pi) = sin(u)/u
 
 
+@_as_x
 def exponential_rise(x, amplitude, tau, offset=0.0):
     """Saturation curve approaching an asymptotic value.
 
@@ -129,10 +144,10 @@ def exponential_rise(x, amplitude, tau, offset=0.0):
     charging capacitors, thermal equilibration, and approach to steady
     state in first-order systems.
     """
-    x = np.asarray(x, dtype=float)
     return amplitude * (1.0 - np.exp(-x / tau)) + offset
 
 
+@_as_x
 def double_exponential(x, amplitude1, tau1, amplitude2, tau2):
     """Sum of two exponential decays with distinct time constants.
 
@@ -140,10 +155,10 @@ def double_exponential(x, amplitude1, tau1, amplitude2, tau2):
     channel, such as biexponential fluorescence decay, two-component
     nuclear magnetic resonance relaxation, or mixed kinetics.
     """
-    x = np.asarray(x, dtype=float)
     return amplitude1 * np.exp(-x / tau1) + amplitude2 * np.exp(-x / tau2)
 
 
+@_as_x
 def moffat(x, amplitude, x0, alpha, beta):
     """Peak with power-law tails controlled by an exponent.
 
@@ -152,18 +167,18 @@ def moffat(x, amplitude, x0, alpha, beta):
     in astronomy for point-spread functions and in X-ray diffraction
     profile analysis.
     """
-    x = np.asarray(x, dtype=float)
     return amplitude * (1.0 + ((x - x0) / alpha) ** 2) ** (-beta)
 
 
+@_as_x
 def gaussian_baseline(x, amplitude, mean, sigma, m, b):
     """Gaussian peak superimposed on a linear background."""
-    x = np.asarray(x, dtype=float)
     sigma = np.asarray(sigma, dtype=float)
     g = amplitude * np.exp(-0.5 * ((x - mean) / sigma) ** 2)
     return g + m * x + b
 
 
+@_as_x
 def bimodal_gaussian(x, amplitude1, mean1, sigma1, amplitude2, mean2, sigma2):
     """Sum of two independent Gaussian peaks.
 
@@ -171,7 +186,6 @@ def bimodal_gaussian(x, amplitude1, mean1, sigma1, amplitude2, mean2, sigma2):
     lines from closely spaced energy levels, overlapping diffraction
     peaks, or multi-species velocity distributions.
     """
-    x = np.asarray(x, dtype=float)
     sigma1 = np.asarray(sigma1, dtype=float)
     sigma2 = np.asarray(sigma2, dtype=float)
     g1 = amplitude1 * np.exp(-0.5 * ((x - mean1) / sigma1) ** 2)
@@ -185,6 +199,7 @@ FWHM2SIGMA = 1.0 / (2.0 * np.sqrt(2.0 * np.log(2.0)))
 """Conversion factor:  sigma = FWHM * FWHM2SIGMA."""
 
 
+@_as_x
 def voigt(x, amplitude, center, sigma, gamma):
     """Symmetric peak shape with a Gaussian core and Lorentzian wings.
 
@@ -192,10 +207,10 @@ def voigt(x, amplitude, center, sigma, gamma):
     of equal widths. It arises naturally in spectroscopy when Doppler
     (Gaussian) and natural/pressure (Lorentzian) broadening act together.
     """
-    x = np.asarray(x, dtype=float)
     return amplitude * voigt_profile(x - center, sigma, gamma)
 
 
+@_as_x
 def skew_normal(x, amplitude, location, scale, alpha):
     """Asymmetric bell-shaped curve with a shape parameter.
 
@@ -204,11 +219,10 @@ def skew_normal(x, amplitude, location, scale, alpha):
     values tilt the peak leftwards and negative values tilt it rightwards.
     Useful for modelling peaks that are not symmetric about their centre.
     """
-
-    x = np.asarray(x, dtype=float)
     return amplitude * skewnorm.pdf(x, alpha, loc=location, scale=scale)
 
 
+@_as_x
 def gaussian_fwhm(x, amplitude, center, fwhm):
     """Gaussian peak parameterised by its full width at half maximum.
 
@@ -216,11 +230,11 @@ def gaussian_fwhm(x, amplitude, center, fwhm):
     as the directly measurable FWHM instead of the standard deviation.
     The conversion between FWHM and sigma is handled internally.
     """
-    x = np.asarray(x, dtype=float)
     sigma = np.asarray(fwhm, dtype=float) * FWHM2SIGMA
     return amplitude * np.exp(-0.5 * ((x - center) / sigma) ** 2)
 
 
+@_as_x
 def lorentzian_fwhm(x, amplitude, center, fwhm):
     """Lorentzian peak parameterised by its full width at half maximum.
 
@@ -228,11 +242,11 @@ def lorentzian_fwhm(x, amplitude, center, fwhm):
     width as the directly measurable FWHM instead of the half-width at
     half maximum. The conversion is handled internally.
     """
-    x = np.asarray(x, dtype=float)
     hwhm = np.asarray(fwhm, dtype=float) / 2.0
     return amplitude * (hwhm**2 / ((x - center) ** 2 + hwhm**2))
 
 
+@_as_x
 def exgaussian(x, amplitude, mu, sigma, tau):
     """Asymmetric peak with a Gaussian rise and exponential tail.
 
@@ -242,7 +256,6 @@ def exgaussian(x, amplitude, mu, sigma, tau):
     the characteristic shape of chromatographic signals, reaction-time
     data, and detector pulses.
     """
-    x = np.asarray(x, dtype=float)
     sigma = np.asarray(sigma, dtype=float)
     tau = np.asarray(tau, dtype=float)
     arg = (x - mu) / (np.sqrt(2.0) * sigma)
@@ -252,6 +265,7 @@ def exgaussian(x, amplitude, mu, sigma, tau):
         return amplitude * 0.5 * exp_part * erfc(arg - shift)
 
 
+@_as_x
 def stretched_exponential(x, amplitude, tau, beta, offset=0.0):
     """Decay function with a variable stretching exponent.
 
@@ -261,13 +275,13 @@ def stretched_exponential(x, amplitude, tau, beta, offset=0.0):
     a slower, stretched decay. Commonly used to model relaxation in
     disordered systems such as polymers, glasses, and biological tissues.
     """
-    x = np.asarray(x, dtype=float)
     tau = np.asarray(tau, dtype=float)
     beta = np.asarray(beta, dtype=float)
     with np.errstate(over="ignore", invalid="ignore"):
         return offset + amplitude * np.exp(-((x / tau) ** beta))
 
 
+@_as_x
 def tanh(x, amplitude, center, width, offset=0.0):
     """Smooth sigmoidal step with a hyperbolic-tangent shape.
 
@@ -276,10 +290,10 @@ def tanh(x, amplitude, center, width, offset=0.0):
     magnetic phase transitions, adsorption isotherms, and switching
     phenomena where the transition has a well-defined midpoint.
     """
-    x = np.asarray(x, dtype=float)
     return offset + amplitude * np.tanh((x - center) / width)
 
 
+@_as_x
 def arctan(x, amplitude, center, width, offset=0.0):
     """Smooth step with broad polynomial tails.
 
@@ -288,10 +302,10 @@ def arctan(x, amplitude, center, width, offset=0.0):
     broader transition zone. Useful for resistivity jumps, specific-heat
     anomalies, and other phase-transition signatures with wide tails.
     """
-    x = np.asarray(x, dtype=float)
     return offset + amplitude * np.arctan((x - center) / width)
 
 
+@_as_x
 def beat(x, amplitude, frequency1, frequency2, phase, offset=0.0):
     """Superposition of two cosine waves of nearby frequencies.
 
@@ -300,18 +314,12 @@ def beat(x, amplitude, frequency1, frequency2, phase, offset=0.0):
     modulation (envelope) at the difference frequency. The output is the
     average of the two cosines, scaled by the amplitude.
     """
-    x = np.asarray(x, dtype=float)
-    return (
-        offset
-        + amplitude
-        * 0.5
-        * (
-            np.cos(2.0 * np.pi * frequency1 * x + phase)
-            + np.cos(2.0 * np.pi * frequency2 * x + phase)
-        )
+    return offset + amplitude * 0.5 * (
+        np.cos(2.0 * np.pi * frequency1 * x + phase) + np.cos(2.0 * np.pi * frequency2 * x + phase)
     )
 
 
+@_as_x
 def rational(x, amplitude, x0):
     """First-order rational function with a single pole.
 
@@ -321,20 +329,19 @@ def rational(x, amplitude, x0):
     driven systems and susceptibility measurements away from the
     singular point.
     """
-    x = np.asarray(x, dtype=float)
     with np.errstate(divide="ignore", invalid="ignore"):
         return amplitude / (x - x0)
 
 
+@_as_x
 def quartic(x, a, b, c, d, e):
     """Fourth-degree polynomial."""
-    x = np.asarray(x, dtype=float)
     return ((a * x + b) * x + c) * x * x + d * x + e
 
 
+@_as_x
 def quintic(x, a, b, c, d, e, f):
     """Fifth-degree polynomial."""
-    x = np.asarray(x, dtype=float)
     return (((a * x + b) * x + c) * x + d) * x * x + e * x + f
 
 
@@ -391,8 +398,6 @@ def get_model(model):
 
 
 def model_param_names(model):
-    import inspect
-
     fn, _ = get_model(model)
     sig = inspect.signature(fn)
     params = list(sig.parameters.values())

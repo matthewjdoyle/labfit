@@ -21,5 +21,3 @@ Uncertainty helpers
 .. autofunction:: labfit.utils.propagate_errors
 
 .. autofunction:: labfit.utils.effective_sigma
-
-.. autofunction:: labfit.utils.as_array
