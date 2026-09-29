@@ -49,6 +49,8 @@ Core goals:
 
    <div class="grid-links">
 
+Quick links:
+
 - **5-minute quickstart** - Get a working fit in 5 minutes: CSV, errors, fit, plot, χ².  :ref:`quickstart`
 
 - **Concepts** - Diagnostics, reduced χ², and error propagation. :ref:`concepts`
