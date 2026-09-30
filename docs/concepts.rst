@@ -65,6 +65,25 @@ the default estimates a common variance from the residuals instead.
 ``result.absolute_sigma`` records the policy used. Goodness-of-fit statistics
 are calculated separately and are not changed by this option.
 
+Identifiability of fitted parameters
+------------------------------------
+
+An optimizer can converge even when the observations do not distinguish all
+parameters. For example, in ``(a + b) * x``, only the sum is determined. LabFit
+checks the weighted residual Jacobian after fitting. If it lacks full column
+rank, has a zero column, or is too ill-conditioned for reliable numerical
+uncertainties, ``result.identifiable`` is ``False``. It warns and sets the
+parameter covariance and all parameter uncertainties to ``NaN``. The human
+readable result also flags this condition. ``result.success`` still reports
+whether the optimizer converged; it does not imply identifiable parameters.
+
+``result.jacobian_rank`` and ``result.jacobian_condition`` expose the diagnostic.
+The condition is computed after normalizing each Jacobian column, so a simple
+change of parameter units does not trigger it. LabFit treats a condition
+number at or above :math:`1/\sqrt{\epsilon_{\mathrm{machine}}}` as unreliable
+for numerical covariance estimation. This local test cannot guarantee that a
+nonlinear model is globally identifiable.
+
 Correlated errors
 -----------------
 

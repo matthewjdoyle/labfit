@@ -52,6 +52,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Consolidated `mypy`, `ruff`, and `coverage` configuration into `pyproject.toml`.
 
 ### Fixed
+- Detect rank-deficient and severely ill-conditioned fit Jacobians. Report
+  convergence separately from identifiability, warn, and return unavailable
+  parameter covariance and uncertainties when they cannot be trusted.
 - Corrected the ExGaussian tail and normalization; amplitude now matches the
   documented integrated-area convention. Previously fitted values may change.
 - Reject unknown initial-guess/bounds keys and incorrectly sized or shaped

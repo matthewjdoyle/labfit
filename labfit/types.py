@@ -176,6 +176,9 @@ class FitResult:
     model: Any = None
     is_weighted: bool = True
     absolute_sigma: bool = False
+    identifiable: bool = True
+    jacobian_rank: int | None = None
+    jacobian_condition: float = float("nan")
 
     def __post_init__(self) -> None:
         if self.covariance is not None:
@@ -227,6 +230,9 @@ class FitResult:
                 lines.append(f"  p ~ {self.p_value:.1e}")
             else:
                 lines.append(f"  p = {self.p_value:.3g}")
+
+        if not self.identifiable:
+            lines.append("  [!] Parameters are not identifiable; uncertainties are unreliable")
 
         if not self.success:
             lines.append("  [!] Fit did NOT converge")

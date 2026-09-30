@@ -4,7 +4,7 @@ Based on the repository review of 2026-09-30. Keep the review IDs stable.
 Check an item only when its acceptance criteria are implemented and verified;
 record partial progress without closing the whole item.
 
-Progress: **5 of 14 review items complete**; R11 and R14 partially addressed.
+Progress: **6 of 14 review items complete**; R11 and R14 partially addressed.
 
 P1: incorrect or misleading scientific results. P2: reliability, usability,
 performance, and maintenance.
@@ -20,7 +20,7 @@ performance, and maintenance.
   `absolute_sigma`). Scaling all absolute sigmas by 10 must scale parameter
   uncertainties by 10. Test both policies and correlated covariance inputs.
   Source: `labfit/fitter_impl.py`.
-- [ ] **R03 / P1: Detect unidentifiable parameters.** Inspect Jacobian rank and
+- [x] **R03 / P1: Detect unidentifiable parameters.** Inspect Jacobian rank and
   conditioning rather than only finite covariance diagonals. A model `(a+b)*x`
   must not report both parameters as exactly known. Warn and mark uncertainties
   unreliable while distinguishing fit convergence from identifiability.
@@ -72,11 +72,14 @@ performance, and maintenance.
   Progress (2026-09-30): added 21 regression cases covering independent
   ExGaussian convolution/area/tails, parameter validation, plotted error-bar
   endpoints, and execution of the documented half-life example. Statistical
-  covariance, rank-deficiency and prediction-band tests remain open.
+  additional covariance, rank-deficiency and prediction-band tests were planned.
   Progress (2026-09-30, R02): added 14 cases for analytical linear covariance,
   absolute/relative scaling with sigmas, weights and correlated covariance,
   unweighted policy, default compatibility, and public entry-point forwarding.
-  Rank-deficiency and prediction-band tests remain open.
+  Rank-deficiency and prediction-band tests remained open at that point.
+  Progress (2026-09-30, R03): added five cases for redundant, nearly
+  redundant, zero-sensitivity, and identifiable parameter fits. Prediction-band
+  tests remain open.
 - [ ] **R12 / P2: Optimize correlated fitting and confidence bands.** Use a
   triangular solve for Cholesky factors and vectorize model evaluations across
   the prediction grid. Extend benchmarks and compare numerical results/timings.
@@ -118,8 +121,15 @@ performance, and maintenance.
   Ruff lint/format checks and mypy passed. HTML docs built with warnings as
   errors using installed Sphinx 8.2.3 (declared docs range remains Sphinx 7.x).
 
+- R03 (2026-09-30): diagnosed Jacobian rank and column-normalized condition
+  after optimization. Unidentifiable fits warn, retain optimizer convergence
+  status, and expose unavailable covariance and uncertainties as NaN.
+  Validation: 80 tests passed (30 warnings), 91.46% package coverage;
+  Ruff lint/format checks and mypy passed. HTML docs built successfully with
+  warnings treated as errors using installed Sphinx 8.2.3.
+
 ## Next suggested batch
 
-Address R03 and R05 together with independent analytical tests from R11:
-detect unidentifiable parameters and make goodness-of-fit summaries honest
-about their assumptions. R02 covariance-scaling semantics are now explicit.
+Address R05 with independent statistics tests from R11: preserve actual
+degrees of freedom and report goodness-of-fit summaries only under their
+valid assumptions. R02 and R03 are complete.

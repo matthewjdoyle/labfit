@@ -407,22 +407,44 @@ def _fit_single(
         chi2 = float(np.sum(np.square(residual)))
     reduced_chi2 = chi2 / dof
 
-    if opt.jac is not None and opt.jac.size:
+    # Normalize columns before testing conditioning so a change of parameter
+    # units alone does not make an identifiable model appear ill-conditioned.
+    jacobian_rank = 0
+    jacobian_condition = float("inf")
+    identifiable = False
+    if opt.jac is not None and opt.jac.size and np.all(np.isfinite(opt.jac)):
+        column_norms = np.linalg.norm(opt.jac, axis=0)
+        if np.all(np.isfinite(column_norms)):
+            scaled_jac = opt.jac / np.where(column_norms > 0, column_norms, 1.0)
+            singular_values = np.linalg.svd(scaled_jac, compute_uv=False)
+            tolerance = np.finfo(float).eps * max(scaled_jac.shape) * singular_values[0]
+            jacobian_rank = int(np.count_nonzero(singular_values > tolerance))
+            if singular_values.size == popt.size and singular_values[-1] > 0:
+                jacobian_condition = float(singular_values[0] / singular_values[-1])
+            # Numerical derivatives cannot resolve directions much smaller
+            # than sqrt(machine epsilon) relative to the strongest direction.
+            identifiable = jacobian_rank == popt.size and jacobian_condition < 1.0 / np.sqrt(
+                np.finfo(float).eps
+            )
+
+    if identifiable:
         jtj = opt.jac.T @ opt.jac
         cov = np.linalg.pinv(jtj)
         if not absolute_sigma:
             cov *= reduced_chi2
-    else:
+        if not np.all(np.isfinite(cov)):
+            identifiable = False
+    if not identifiable:
         cov = np.full((popt.size, popt.size), np.nan)
-
-    diag_cov = np.diag(cov) if cov.ndim == 2 else np.asarray([])
-    if np.any(~np.isfinite(diag_cov)):
         warnings.warn(
-            "Covariance matrix is singular; parameter uncertainties are unreliable.",
+            f"Fit '{model_name}': optimizer success={bool(opt.success)}; parameters are not identifiable "
+            f"(Jacobian rank {jacobian_rank}/{popt.size}, condition {jacobian_condition:.3g}); "
+            "parameter covariance and uncertainties are unreliable.",
             UserWarning,
             stacklevel=3,
         )
 
+    diag_cov = np.diag(cov)
     params = {name: float(value) for name, value in zip(param_names, popt, strict=True)}
     uncertainties = {
         name: float(np.sqrt(max(float(value), 0.0)))
@@ -475,6 +497,9 @@ def _fit_single(
         model=fn,
         is_weighted=is_weighted,
         absolute_sigma=absolute_sigma,
+        identifiable=identifiable,
+        jacobian_rank=jacobian_rank,
+        jacobian_condition=jacobian_condition,
     )
 
 
