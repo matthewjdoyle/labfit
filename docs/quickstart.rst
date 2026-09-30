@@ -151,7 +151,7 @@ their uncertainties, and a goodness-of-fit metric.
 
 .. code-block:: python
 
-   result = fit(x, y, model="gaussian")
+   result = fit(x, y, model="gaussian", sigma=sigma)
 
    # Fitted values
    print(result.params["amplitude"])         # e.g. 2.987
@@ -164,6 +164,8 @@ their uncertainties, and a goodness-of-fit metric.
    # Goodness-of-fit
    print(result.reduced_chi2)               # reduced chi-squared
    print(result.p_value)                     # p-value of the fit
+   print(result.dof)                         # N - number of parameters
+   print(result.residual_variance)           # unweighted SSR / dof in y units squared
 
    # Convergence check
    if not result.success:
@@ -188,7 +190,27 @@ describes the data within the stated uncertainties:
 - **< 1.0** → the scatter is smaller than expected.
   Possible causes: overestimated errors, overfitting, or data selection bias.
 
-For a deeper discussion see :ref:`concepts`.
+Without supplied uncertainties, ``reduced_chi2`` and ``p_value`` are ``NaN``;
+use ``residual_variance`` to describe the scatter. Nonpositive ``dof`` makes
+all three statistics unavailable. A p-value additionally requires convergence
+and identifiable parameters, and its interpretation assumes calibrated Gaussian
+measurement errors. For a deeper discussion see :ref:`concepts`.
+
+Plotting confidence and prediction bands
+----------------------------------------
+
+.. code-block:: python
+
+   result = fit(x, y, sigma=sigma, absolute_sigma=True)
+   plot_fit(result, show_ci=True, ci_level=0.95)  # uncertainty in the mean
+   plot_fit(result, show_ci=True, prediction=True, ci_level=0.95,
+            prediction_sigma=0.3)  # future observation sigma in y units
+
+For errors that vary with x, pass a function such as
+``prediction_sigma=lambda grid: 0.2 + 0.1 * np.abs(grid)``. Heterogeneous or
+correlated training errors require an explicit future noise model. Bands are
+pointwise normal approximations; ``ci_level`` must lie strictly between 0 and 1.
+See :ref:`concepts` for noise defaults and a complete runnable example.
 
 Plotting multiple series
 ------------------------

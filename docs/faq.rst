@@ -112,6 +112,11 @@ vectorised (works on arrays).
 How do I interpret the p-value?
 -------------------------------
 
+``p_value`` is ``NaN`` for unweighted fits, nonpositive degrees of freedom,
+unidentifiable parameters, or optimizer failure. When available, its
+interpretation assumes calibrated Gaussian measurement uncertainties. Relative
+weights alone do not establish an absolute noise scale.
+
 The ``p_value`` in a fit result answers this question:
 
    *If the model is correct and the uncertainties are right, how likely

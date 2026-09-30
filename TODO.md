@@ -4,7 +4,7 @@ Based on the repository review of 2026-09-30. Keep the review IDs stable.
 Check an item only when its acceptance criteria are implemented and verified;
 record partial progress without closing the whole item.
 
-Progress: **6 of 14 review items complete**; R11 and R14 partially addressed.
+Progress: **9 of 14 review items complete**; R14 partially addressed.
 
 P1: incorrect or misleading scientific results. P2: reliability, usability,
 performance, and maintenance.
@@ -25,12 +25,12 @@ performance, and maintenance.
   must not report both parameters as exactly known. Warn and mark uncertainties
   unreliable while distinguishing fit convergence from identifiability.
   Source: `labfit/fitter_impl.py`.
-- [ ] **R04 / P1: Correct prediction-band noise scaling.** Do not add
+- [x] **R04 / P1: Correct prediction-band noise scaling.** Do not add
   dimensionless reduced chi-square to variance in y-units squared. Define future
   observation noise, including heteroscedastic data, and test invariance under
   unit changes. Validate confidence levels.
   Source: `labfit/plot.py`.
-- [ ] **R05 / P1: Report statistics only when valid.** Preserve actual degrees
+- [x] **R05 / P1: Report statistics only when valid.** Preserve actual degrees
   of freedom instead of clamping to one. Suppress chi-square p-values and
   measurement-error advice for unweighted fits; expose residual variance
   separately. Test zero/negative degrees of freedom and unweighted summaries.
@@ -64,7 +64,7 @@ performance, and maintenance.
 
 ## Engineering quality
 
-- [ ] **R11 / P2: Add independent scientific regression tests.** Complement the
+- [x] **R11 / P2: Add independent scientific regression tests.** Complement the
   90% coverage gate with analytical linear covariance, rank deficiency, unit
   scaling, independent model references, prediction bands and runnable examples.
   Avoid validating a formula only by fitting data generated with that formula.
@@ -80,6 +80,18 @@ performance, and maintenance.
   Progress (2026-09-30, R03): added five cases for redundant, nearly
   redundant, zero-sensitivity, and identifiable parameter fits. Prediction-band
   tests remain open.
+  Progress (2026-09-30, R05): added 22 cases for analytical chi-square/p-values,
+  raw residual variance and y-unit scaling, unweighted summaries, zero/negative
+  degrees of freedom, absolute covariance without residual degrees of freedom,
+  and p-value suppression after rank failure or nonconvergence. Prediction-band
+  tests remain open.
+  Progress (2026-09-30, R04): added 53 cases for analytical pointwise mean and
+  prediction bands under absolute/relative covariance policies, homogeneous and
+  heterogeneous future noise, correlated training errors, x/y unit scaling,
+  invalid confidence levels/noise, actual rendered endpoints, and execution of
+  the complete documented prediction-band example. Together with the preceding
+  covariance, rank, model-reference and half-life-example regressions, all R11
+  acceptance criteria are now covered and verified.
 - [ ] **R12 / P2: Optimize correlated fitting and confidence bands.** Use a
   triangular solve for Cholesky factors and vectorize model evaluations across
   the prediction grid. Extend benchmarks and compare numerical results/timings.
@@ -128,8 +140,36 @@ performance, and maintenance.
   Ruff lint/format checks and mypy passed. HTML docs built successfully with
   warnings treated as errors using installed Sphinx 8.2.3.
 
+- R05 (2026-09-30): preserved actual N - k degrees of freedom and exposed
+  unweighted SSR / dof as `residual_variance` in squared y units. Unweighted
+  chi-square statistics now return NaN and summaries omit measurement-error
+  advice. Nonpositive dof makes residual-scale statistics and relative parameter
+  covariance unavailable; identifiable absolute covariance remains supported.
+  P-values also require convergence and identifiable parameters. Added 22
+  independent statistics regression cases and updated the API docs/changelog.
+  Validation: 102 tests passed (28 warnings), 91.99% package coverage;
+  Ruff 0.11.10 lint/format checks and mypy passed. HTML docs built successfully
+  with warnings treated as errors using installed Sphinx 8.2.3 (declared docs
+  range remains Sphinx 7.x).
+
+- R04 and R11 (2026-09-30): prediction bands now add future observation noise
+  in squared y units. Added `prediction_sigma` for absolute future errors as a
+  scalar, plotted-grid array, or callable. Constant training errors follow the
+  covariance policy; heterogeneous/correlated errors require explicit future
+  noise. Unweighted relative fits use residual variance; unweighted absolute
+  fits retain their unit-variance assumption. Validate confidence levels and
+  future sigmas before creating or modifying figures. Bands remain pointwise
+  normal approximations for future errors independent of the fitted data.
+  Added 53 regression cases; updated documentation and changelog. R11 is complete
+  after verifying independent covariance/rank/model/unit/band references and
+  runnable half-life and prediction examples across the regression suite.
+  Validation: 155 tests passed (28 warnings), 92.81% package coverage;
+  Ruff 0.11.10 lint/format checks and mypy passed. HTML docs built successfully
+  with warnings treated as errors using installed Sphinx 8.2.3 (declared docs
+  range remains Sphinx 7.x).
+
 ## Next suggested batch
 
-Address R05 with independent statistics tests from R11: preserve actual
-degrees of freedom and report goodness-of-fit summaries only under their
-valid assumptions. R02 and R03 are complete.
+Address R07: centralize validation of all uncertainty specifications, including
+normalized overrides, invalid weights, asymmetric pairs and positive-definite
+covariance. R01-R06 and the independent scientific regressions in R11 are complete.

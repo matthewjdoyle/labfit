@@ -159,6 +159,16 @@ class Dataset:
 
 @dataclass
 class FitResult:
+    """Fitted parameters and diagnostics.
+
+    ``dof`` is N - k, or None for manually constructed results without it.
+    ``residual_variance`` is unweighted SSR / dof in squared y units, NaN
+    for nonpositive dof. For heteroscedastic or correlated errors it is a
+    measure of residual scatter, not a common measurement-noise variance.
+    ``reduced_chi2`` and ``p_value`` are NaN for unweighted fits; the latter
+    also requires positive dof, optimizer convergence and identifiable parameters.
+    """
+
     reduced_chi2: float
     params: dict[str, float]
     covariance: np.ndarray | None = None
@@ -179,6 +189,8 @@ class FitResult:
     identifiable: bool = True
     jacobian_rank: int | None = None
     jacobian_condition: float = float("nan")
+    dof: int | None = None
+    residual_variance: float = float("nan")
 
     def __post_init__(self) -> None:
         if self.covariance is not None:
@@ -217,19 +229,37 @@ class FitResult:
                 else:
                     lines.append(f"  {name} = {val:.5g}  (uncertainty N/A)")
 
-        if np.isfinite(self.reduced_chi2):
+        if self.dof is not None:
+            lines.append(f"  degrees of freedom = {self.dof}")
+        positive_dof = self.dof is None or self.dof > 0
+        if positive_dof and np.isfinite(self.residual_variance):
+            lines.append(f"  residual variance = {self.residual_variance:.4g} (y units squared)")
+        if self.dof is not None and self.dof <= 0:
+            lines.append("  [!] Nonpositive degrees of freedom; residual-scale statistics unavailable")
+
+        if self.is_weighted and positive_dof and np.isfinite(self.reduced_chi2):
             note = ""
-            if self.reduced_chi2 > 10:
-                note = "  -- model may be wrong or errors underestimated"
-            elif self.reduced_chi2 < 0.1:
-                note = "  -- errors may be overestimated"
+            if self.success and self.identifiable:
+                if self.reduced_chi2 > 10:
+                    note = "  -- model may be wrong or errors underestimated"
+                elif self.reduced_chi2 < 0.1:
+                    note = "  -- errors may be overestimated"
             lines.append(f"  reduced chi2 = {self.reduced_chi2:.4g}{note}")
 
-        if np.isfinite(self.p_value):
+        if (
+            self.is_weighted
+            and positive_dof
+            and self.success
+            and self.identifiable
+            and np.isfinite(self.p_value)
+        ):
             if self.p_value < 0.001:
                 lines.append(f"  p ~ {self.p_value:.1e}")
             else:
                 lines.append(f"  p = {self.p_value:.3g}")
+
+        if self.identifiable and any(not np.isfinite(value) for value in self.uncertainties.values()):
+            lines.append("  [!] Parameter uncertainties are unavailable")
 
         if not self.identifiable:
             lines.append("  [!] Parameters are not identifiable; uncertainties are unreliable")

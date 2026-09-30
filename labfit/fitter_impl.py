@@ -396,7 +396,7 @@ def _fit_single(
     popt = opt.x
     y_fit = np.asarray(fn(x, *popt), dtype=float)
     residual = y - y_fit
-    dof = max(int(x.size - popt.size), 1)
+    dof = int(x.size - popt.size)
     is_weighted = sigma is not None or sigma_cov is not None
     if sigma_cov is not None:
         chi2 = float(np.sum(np.square(np.linalg.solve(chol, residual))))
@@ -405,7 +405,9 @@ def _fit_single(
         chi2 = float(np.sum(np.square(residual / sigma_vec)))
     else:
         chi2 = float(np.sum(np.square(residual)))
-    reduced_chi2 = chi2 / dof
+    residual_variance = float(residual @ residual) / dof if dof > 0 else float("nan")
+    objective_variance = chi2 / dof if dof > 0 else float("nan")
+    reduced_chi2 = objective_variance if is_weighted else float("nan")
 
     # Normalize columns before testing conditioning so a change of parameter
     # units alone does not make an identifiable model appear ill-conditioned.
@@ -430,10 +432,12 @@ def _fit_single(
     if identifiable:
         jtj = opt.jac.T @ opt.jac
         cov = np.linalg.pinv(jtj)
-        if not absolute_sigma:
-            cov *= reduced_chi2
         if not np.all(np.isfinite(cov)):
             identifiable = False
+        elif not absolute_sigma:
+            # Residual scaling needs positive degrees of freedom, independently
+            # of whether the Jacobian identifies the parameters.
+            cov = cov * objective_variance if dof > 0 else np.full_like(cov, np.nan)
     if not identifiable:
         cov = np.full((popt.size, popt.size), np.nan)
         warnings.warn(
@@ -450,13 +454,26 @@ def _fit_single(
         name: float(np.sqrt(max(float(value), 0.0)))
         for name, value in zip(param_names, diag_cov, strict=True)
     }
-    p_value = float(chi2_dist.sf(chi2, dof)) if dof > 0 and np.isfinite(chi2) else float("nan")
+    p_value = (
+        float(chi2_dist.sf(chi2, dof))
+        if is_weighted and dof > 0 and identifiable and opt.success and np.isfinite(chi2)
+        else float("nan")
+    )
 
     # ── actionable warnings for students ─────────────────────
     if not is_weighted:
         warnings.warn(
-            "No uncertainties provided; 'reduced_chi2' is the unweighted SSR per "
-            "degree of freedom, not a true reduced χ².",
+            "No uncertainties provided; chi-square statistics are unavailable. "
+            "Use 'residual_variance' for the unweighted SSR per degree of freedom.",
+            UserWarning,
+            stacklevel=3,
+        )
+    if dof <= 0:
+        warnings.warn(
+            f"Fit '{model_name}' has {dof} degrees of freedom (N - k); "
+            "residual variance, reduced chi-square and p-value are unavailable. "
+            "Relative parameter covariance cannot be estimated; provide more data "
+            "or use fewer parameters.",
             UserWarning,
             stacklevel=3,
         )
@@ -469,7 +486,7 @@ def _fit_single(
             UserWarning,
             stacklevel=3,
         )
-    elif is_weighted and reduced_chi2 > 10:
+    elif is_weighted and identifiable and reduced_chi2 > 10:
         warnings.warn(
             f"reduced chi2 = {reduced_chi2:.1f} is much larger than 1. "
             f"The model '{model_name}' may not describe the data well, "
@@ -500,6 +517,8 @@ def _fit_single(
         identifiable=identifiable,
         jacobian_rank=jacobian_rank,
         jacobian_condition=jacobian_condition,
+        dof=dof,
+        residual_variance=residual_variance,
     )
 
 
@@ -566,8 +585,12 @@ def fit(
     -------
     FitResult
         Container with ``params``, ``uncertainties``, ``reduced_chi2``,
-        ``p_value``, and convenience methods like ``predict(x)`` and
-        ``residuals``.
+        ``p_value``, ``dof`` (N minus the number of parameters), and
+        ``residual_variance`` (unweighted SSR / dof, in squared y units).
+        Reduced chi-square and p-value are NaN without supplied errors or
+        positive dof; p-value also requires convergence and identifiability.
+        Residual variance and relative parameter covariance are unavailable
+        when dof <= 0. Convenience methods include ``predict(x)`` and ``residuals``.
     """
     if kwargs:
         unexpected = ", ".join(sorted(kwargs))

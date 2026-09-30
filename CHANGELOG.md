@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.0] - Unreleased
 
 ### Breaking
+- Prediction bands for heterogeneous or correlated training errors now require
+  `prediction_sigma` to define future observation noise. Invalid confidence
+  levels raise ValueError instead of producing invalid band endpoints.
+- Unweighted fits now return NaN for `reduced_chi2` and `p_value`. Use
+  `residual_variance` for the unweighted SSR per degree of freedom in squared y units.
 - Renamed the internal `labfit.fit` submodule to `labfit._fit` to resolve the
   naming collision with the public `labfit.fit` function. The two public entry
   points are now `fit(x, y, *, model=...)` (arrays/CSV first) and
@@ -27,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (or tests) that need a non-interactive backend should set it themselves.
 
 ### Added
+- `plot_fit(..., prediction_sigma=...)` accepts absolute future standard
+  deviations in y units as a scalar, plotted-grid array, or function of x.
+- `FitResult.dof` preserves N minus the number of parameters, including zero
+  and negative values; `residual_variance` exposes raw residual scatter separately.
 - `absolute_sigma` fitting option and result flag: use `True` for absolute
   measurement uncertainties, or the compatible default `False` to estimate
   a common noise scale from residuals. Applies to correlated errors and weights.
@@ -41,9 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `double_exponential`, `moffat`, `gaussian_baseline`, `bimodal_gaussian`.
 
 ### Changed
-- `reduced_chi2` is now accompanied by `is_weighted`; when no uncertainties are
-  provided a `UserWarning` is emitted clarifying that the value is the
-  unweighted SSR per degree of freedom, not a true reduced χ².
+- Unweighted fits warn that chi-square statistics are unavailable, and summaries
+  show residual variance without measurement-error advice.
 - `Dataset` uses the generated `@dataclass` `__init__` instead of a manual
   override.
 - `use_publication_style` applies rcParams via a context manager instead of
@@ -52,6 +60,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Consolidated `mypy`, `ruff`, and `coverage` configuration into `pyproject.toml`.
 
 ### Fixed
+- Prediction bands now add observation variance in squared y units, using
+  constant training errors and the covariance policy or unweighted SSR / dof.
+  Explicit future errors are never scaled by reduced chi-square. Validate
+  confidence levels and future errors before modifying plot axes; retain finite
+  normal quantiles for confidence levels arbitrarily close to one.
+- Stop clamping degrees of freedom to one. Nonpositive dof now yields unavailable
+  residual variance, reduced chi-square, p-value and relative parameter covariance.
+  Absolute covariance remains available for identifiable parameters. Suppress
+  p-values for unidentifiable or unconverged fits.
 - Detect rank-deficient and severely ill-conditioned fit Jacobians. Report
   convergence separately from identifiability, warn, and return unavailable
   parameter covariance and uncertainties when they cannot be trusted.

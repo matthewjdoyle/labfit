@@ -32,7 +32,9 @@ def test_unweighted_fit_sets_flag_and_warns():
         result = fit(x, y, model="linear")
 
     assert result.is_weighted is False
-    assert math.isfinite(result.reduced_chi2)
+    assert math.isnan(result.reduced_chi2)
+    assert math.isnan(result.p_value)
+    assert math.isfinite(result.residual_variance)
 
 
 def test_weighted_fit_sets_flag_and_no_warning():

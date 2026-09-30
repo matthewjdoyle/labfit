@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from numbers import Real
+
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.stats import norm
 
-from .types import AsymmetricError, DataSeries, FitResult, Plotter
+from .types import AsymmetricError, DataSeries, FitResult, MaybeArray, Plotter
 
 # ── Colour-blind friendly palette (Okabe-Ito) ──────────────────────
 _OKABE_ITO = [
@@ -161,26 +164,85 @@ def _plot_fit_line(ax, result: FitResult, index: int):
     return line.get_color()
 
 
+_PredictionSigma = MaybeArray | Callable[[np.ndarray], MaybeArray] | None
+
+
+def _validate_ci_level(ci_level: float) -> float:
+    if not isinstance(ci_level, Real) or isinstance(ci_level, bool):
+        raise ValueError("ci_level must be a finite number strictly between 0 and 1")
+    level = float(ci_level)
+    if not np.isfinite(level) or not 0.0 < level < 1.0:
+        raise ValueError("ci_level must be a finite number strictly between 0 and 1")
+    return level
+
+
+def _prediction_variance(result: FitResult, xs: np.ndarray, prediction_sigma: _PredictionSigma) -> np.ndarray:
+    """Variance of future observations independent of the fitted data."""
+    if prediction_sigma is not None:
+        supplied = prediction_sigma(xs) if callable(prediction_sigma) else prediction_sigma
+        try:
+            sigma = np.asarray(supplied, dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("prediction_sigma must contain finite nonnegative standard deviations") from exc
+        if sigma.ndim != 0 and sigma.shape != xs.shape:
+            raise ValueError("prediction_sigma must be a scalar or match the prediction grid shape")
+        if not np.all(np.isfinite(sigma)) or np.any(sigma < 0):
+            raise ValueError("prediction_sigma must contain finite nonnegative standard deviations")
+        # Explicit future sigmas are absolute errors; never rescale them using
+        # the fitted residuals, even when training errors are relative weights.
+        with np.errstate(over="ignore"):
+            variance = np.square(sigma)
+    elif result.is_weighted:
+        training_sigma = None if result.sigma is None else np.asarray(result.sigma, dtype=float)
+        if (
+            training_sigma is None
+            or training_sigma.size == 0
+            or not np.all(training_sigma == training_sigma.flat[0])
+        ):
+            raise ValueError(
+                "Heterogeneous or correlated training errors do not define future observation noise; "
+                "provide prediction_sigma (a scalar, grid array, or function of x)."
+            )
+        if not np.all(np.isfinite(training_sigma)) or np.any(training_sigma <= 0):
+            raise ValueError("Training sigmas cannot define future noise; provide prediction_sigma")
+        scale = 1.0 if result.absolute_sigma else result.reduced_chi2
+        with np.errstate(over="ignore"):
+            variance = np.square(training_sigma.flat[0]) * scale
+    else:
+        # The absolute unweighted policy assumes unit variance; the relative
+        # policy estimates homoscedastic noise in squared y units from SSR/dof.
+        variance = np.asarray(1.0 if result.absolute_sigma else result.residual_variance)
+    if not np.all(np.isfinite(variance)) or np.any(variance < 0):
+        raise ValueError("Future observation variance is unavailable or invalid; provide prediction_sigma")
+    return np.broadcast_to(variance, xs.shape)
+
+
 def _confidence_band(
-    result: FitResult, xs: np.ndarray, ci_level: float = 0.68, prediction: bool = False
+    result: FitResult,
+    xs: np.ndarray,
+    ci_level: float = 0.68,
+    prediction: bool = False,
+    prediction_sigma: _PredictionSigma = None,
 ) -> tuple[np.ndarray, np.ndarray] | None:
     """Compute a confidence or prediction band for the fit line.
 
-    Returns ``(lower, upper)`` arrays, or ``None`` if the covariance is
-    unavailable.
+    These are pointwise normal approximations using the local parameter
+    covariance. Prediction bands add variance of future observations independent
+    of the fitted data, in squared y units. Explicit prediction_sigma values
+    describe absolute future errors; see plot_fit for default noise policies.
+    Returns ``(lower, upper)`` arrays, or ``None`` if covariance is unavailable.
     """
+    ci_level = _validate_ci_level(ci_level)
+    xs = np.asarray(xs, dtype=float)
     if result.covariance is None or result.model is None:
         return None
     cov = result.covariance
-    if cov.ndim != 2 or not np.all(np.isfinite(np.diag(cov))):
+    if cov.ndim != 2 or not np.all(np.isfinite(cov)):
         return None
 
     names = result.param_names or tuple(result.params.keys())
     p0 = np.array([result.params[n] for n in names], dtype=float)
     n_params = len(p0)
-
-    def model_at(x_val: float) -> float:
-        return float(result.model(np.array([x_val]), *p0)[0])
 
     ys = np.asarray(result.predict(xs), dtype=float)
     sigma_fit = np.zeros_like(ys)
@@ -200,20 +262,13 @@ def _confidence_band(
         sigma_fit[i] = float(np.sqrt(max(grad @ cov @ grad, 0.0)))
 
     if prediction:
-        if result.is_weighted:
-            residual_var = float(result.reduced_chi2)
-        elif result.y is not None and result.y_fit is not None:
-            residual_var = float(np.var(result.y - result.y_fit))
-        else:
-            residual_var = 0.0
-        sigma_fit = np.sqrt(sigma_fit**2 + residual_var)
+        sigma_fit = np.sqrt(sigma_fit**2 + _prediction_variance(result, xs, prediction_sigma))
 
-    z = norm.ppf(0.5 + ci_level / 2.0)
+    z = norm.isf((1.0 - ci_level) / 2.0)
     return ys - z * sigma_fit, ys + z * sigma_fit
 
 
-def _plot_ci_band(ax, result: FitResult, xs: np.ndarray, color: str, ci_level: float, prediction: bool):
-    band = _confidence_band(result, xs, ci_level=ci_level, prediction=prediction)
+def _plot_ci_band(ax, xs: np.ndarray, band, color: str, ci_level: float, prediction: bool):
     if band is None:
         return
     lower, upper = band
@@ -283,6 +338,7 @@ def _plot_single_fit(
     show_ci: bool = False,
     ci_level: float = 0.68,
     prediction: bool = False,
+    prediction_sigma: _PredictionSigma = None,
     title: str | None = None,
     xlabel: str = "x",
     ylabel: str = "y",
@@ -301,6 +357,12 @@ def _plot_single_fit(
     if not isinstance(series, DataSeries):
         raise TypeError("plot_fit expects a DataSeries")
 
+    xs_band = None
+    band = None
+    if show_ci and result.x is not None:
+        xs_band = np.linspace(float(np.min(result.x)), float(np.max(result.x)), 200)
+        band = _confidence_band(result, xs_band, ci_level, prediction, prediction_sigma)
+
     if ax is None:
         fig, ax_main, ax_res = _create_single_figure(show_residuals=show_residuals, figsize=figsize)
     else:
@@ -315,9 +377,8 @@ def _plot_single_fit(
     fit_color = _plot_fit_line(ax_main, result, 0)
     if fit_color is None:
         fit_color = color
-    if show_ci and result.x is not None:
-        xs_band = np.linspace(float(np.min(result.x)), float(np.max(result.x)), 200)
-        _plot_ci_band(ax_main, result, xs_band, fit_color, ci_level, prediction)
+    if xs_band is not None:
+        _plot_ci_band(ax_main, xs_band, band, fit_color, ci_level, prediction)
     if ax_res is not None:
         _plot_residual_axis(ax_res, result, fit_color)
     _style_axes(ax_main, ax_res, xlabel=xlabel, ylabel=ylabel, title=title)
@@ -539,6 +600,7 @@ def plot_fit(
     show_ci: bool = False,
     ci_level: float = 0.68,
     prediction: bool = False,
+    prediction_sigma: _PredictionSigma = None,
     **kwargs,
 ) -> Plotter:
     """Plot a single fit result with its data and residuals.
@@ -560,10 +622,22 @@ def plot_fit(
     show_ci : bool, default ``False``
         Draw a confidence band around the fit line.
     ci_level : float, default ``0.68``
-        Confidence level for the band (e.g. 0.68 for 1σ, 0.95 for 95%).
+        Finite confidence level strictly between 0 and 1 (e.g. 0.68 or 0.95).
+        Bands are pointwise normal approximations, not simultaneous intervals.
     prediction : bool, default ``False``
         If ``True``, draw a prediction band (includes data scatter)
-        instead of a confidence band for the mean.
+        instead of a confidence band for the mean. Requires ``show_ci=True``.
+        Future observations are assumed independent of the fitted data.
+    prediction_sigma : float, array-like or callable, optional
+        Absolute future 1-σ errors in y units. A scalar applies everywhere;
+        an array must match the 200-point grid spanning ``result.x``; a callable
+        receives that grid and returns a scalar or matching array. Explicit
+        values are never scaled by reduced chi-square and may be zero.
+        Without this option, constant training sigmas are reused, scaled by
+        sqrt(reduced_chi2) under the relative covariance policy. Heterogeneous
+        or correlated training errors require an explicit future noise model.
+        Unweighted relative fits use sqrt(residual_variance); unweighted
+        absolute fits assume unit noise, matching their covariance policy.
     title : str, optional
         Plot title.
     xlabel, ylabel : str
@@ -573,9 +647,14 @@ def plot_fit(
     -------
     Plotter
     """
+    ci_level = _validate_ci_level(ci_level)
+    if prediction_sigma is not None and not (show_ci and prediction):
+        raise ValueError("prediction_sigma requires show_ci=True and prediction=True")
     use_publication_style()
     results = _as_results(result)
     if len(results) != 1:
+        if show_ci:
+            raise ValueError("Confidence and prediction bands require a single FitResult")
         return plot_result(result=result, show_residuals=show_residuals, **kwargs)
     return _plot_single_fit(
         results[0],
@@ -585,6 +664,7 @@ def plot_fit(
         show_ci=show_ci,
         ci_level=ci_level,
         prediction=prediction,
+        prediction_sigma=prediction_sigma,
         **kwargs,
     )
 

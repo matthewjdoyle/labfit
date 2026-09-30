@@ -20,8 +20,27 @@ Interpretation:
 - :math:`\chi^2_\nu > 1`   → scatter larger than expected → underestimated errors, weak model, neglected structure, or outliers.
 - :math:`\chi^2_\nu < 1`   → scatter smaller than expected → overestimated errors, overfitting, or data selection bias.
 
-LabFit reports ``reduced_chi2`` on every :class:`FitResult`. Plotting the **standardized residuals**
-helps diagnose which assumption failed.
+LabFit reports ``result.dof = N - k`` without clamping it. ``reduced_chi2``
+is available when errors are supplied and ``dof > 0``. With no errors,
+``reduced_chi2`` and ``p_value`` are ``NaN``: residuals in y units cannot be
+compared to a chi-square distribution. Instead, ``result.residual_variance``
+reports the unweighted sum of squared residuals divided by ``dof``, in squared
+y units. For heterogeneous or correlated errors, this describes the raw
+residual scatter rather than a common measurement-noise variance.
+
+For ``dof <= 0``, residual variance, reduced chi-square and p-value are all
+``NaN``, and LabFit warns. Relative parameter covariance cannot be estimated
+without positive dof, so its uncertainties are also unavailable. Absolute
+parameter covariance can still be computed when the Jacobian identifies the
+parameters. Plotting the **standardized residuals** helps diagnose which
+assumption failed.
+
+A chi-square p-value also requires optimizer convergence and identifiable
+parameters. Its interpretation assumes the supplied errors describe calibrated
+Gaussian measurement noise and the model is appropriate; for nonlinear models
+it is generally a local approximation. With purely relative weights, treat the
+reported weighted chi-square as a diagnostic, and interpret its p-value only
+if those weights also describe the absolute noise scale.
 
 Absolute uncertainties and relative weights
 -------------------------------------------
@@ -64,6 +83,80 @@ used for asymmetric errors. With no error specification,
 the default estimates a common variance from the residuals instead.
 ``result.absolute_sigma`` records the policy used. Goodness-of-fit statistics
 are calculated separately and are not changed by this option.
+
+Confidence and prediction bands
+-------------------------------
+
+``plot_fit(result, show_ci=True)`` draws a confidence band for the fitted mean.
+Adding ``prediction=True`` draws a band for a future observation. Both use
+pointwise normal approximations with the local parameter covariance, rather
+than simultaneous confidence regions or exact small-sample intervals.
+``ci_level`` must be finite and strictly between 0 and 1.
+
+For a parameter gradient :math:`g(x)` and parameter covariance :math:`C`,
+the mean variance is :math:`v_{\mathrm{mean}}(x) = g(x)^T C g(x)`. A prediction
+band adds the future observation variance in squared y units:
+
+.. math::
+
+   v_{\mathrm{prediction}}(x) = v_{\mathrm{mean}}(x) + \sigma_{\mathrm{future}}(x)^2.
+
+The band endpoints are the fitted mean plus or minus
+:math:`z_{(1+\mathrm{ci\_level})/2}\sqrt{v(x)}`. This assumes future observation
+errors are independent of the data used to estimate the parameters.
+
+Pass ``prediction_sigma`` to specify absolute future 1-sigma errors in y units:
+
+- A scalar applies the same error throughout the band.
+- A function receives the plotted x grid and returns a scalar or an array with
+  the same shape. This is useful for heteroscedastic noise, whose size varies
+  with x.
+- An array must match the plotted 200-point grid spanning the minimum and
+  maximum fitted x values. Training-data error arrays usually have a different
+  shape and cannot be reused directly.
+
+Explicit future sigmas must be finite and nonnegative, and are never rescaled
+by reduced chi-square. Zero specifies a noise-free future observation, so the
+prediction band equals the confidence band. The option requires
+``show_ci=True`` and ``prediction=True`` for a single fit.
+
+When ``prediction_sigma`` is omitted, LabFit uses these defaults:
+
+- Constant training sigmas are reused under ``absolute_sigma=True``. Under the
+  relative policy, their variance is multiplied by ``reduced_chi2`` to estimate
+  the common noise scale. Constant inverse-variance weights follow the same rule.
+- An unweighted relative fit uses ``residual_variance`` (SSR / positive dof).
+  An unweighted absolute fit assumes unit variance in the current y units,
+  matching its parameter covariance policy.
+- Heterogeneous or correlated training errors require an explicit future sigma.
+  LabFit does not infer a noise function between data points or assume that the
+  training covariance describes a new observation. For correlated training
+  data, the supplied future sigma describes its marginal error; future errors
+  must still be independent of the fitted data.
+
+A missing residual noise scale requires an explicit ``prediction_sigma``.
+If parameter covariance is unavailable, neither band can be drawn.
+Changing y units requires scaling y and all absolute measurement and future
+sigmas by the same factor; covariance scales by its square, and band widths
+scale with y. An implicit unit-variance assumption describes a different noise
+model when the y units change, so supply physical errors for unit invariance.
+
+This complete example uses a future error function for heterogeneous data:
+
+.. code-block:: python
+
+   import numpy as np
+   from labfit import fit, plot_fit
+
+   x = np.array([-2.0, -1.0, 0.0, 1.0, 2.0, 3.0])
+   y = np.array([-1.4, -0.5, 1.0, 2.0, 3.5, 4.3])
+   sigma = 0.2 + 0.1 * np.abs(x)
+   result = fit(x, y, sigma=sigma, absolute_sigma=True)
+   plot = plot_fit(
+       result, show_ci=True, prediction=True, ci_level=0.95,
+       prediction_sigma=lambda grid: 0.2 + 0.1 * np.abs(grid),
+   )
+   plot.save("prediction-band.png")
 
 Identifiability of fitted parameters
 ------------------------------------
