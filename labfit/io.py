@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import warnings
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
@@ -27,7 +28,18 @@ _FRACTION_COLUMN_NAMES = (
 )
 
 
-def _coerce_path(path) -> Path:
+class UncertaintyInferenceWarning(UserWarning):
+    """Measurement errors were inferred from a loading heuristic."""
+
+
+def _validate_error_mode(error_mode: str) -> str:
+    modes = {"auto", "poisson", "fraction", "unweighted"}
+    if not isinstance(error_mode, str) or error_mode.lower() not in modes:
+        raise ValueError("error_mode must be one of: auto, poisson, fraction, unweighted")
+    return error_mode.lower()
+
+
+def _coerce_path(path: str | Path) -> Path:
     return Path(path).expanduser()
 
 
@@ -90,7 +102,7 @@ def _read_table(path: Path, delimiter: str | None) -> tuple[list[str], list[list
     return header, normalized_rows
 
 
-def _resolve_column(selector, header: Sequence[str]) -> int:
+def _resolve_column(selector: str | int, header: Sequence[str]) -> int:
     if isinstance(selector, int):
         index = selector
     else:
@@ -109,45 +121,54 @@ def _extract_column(rows: Sequence[Sequence[str]], index: int) -> np.ndarray:
     return np.asarray([float(row[index]) for row in rows], dtype=float)
 
 
-def _infer_y_err(y: np.ndarray, *, default_fraction: float, error_mode: str) -> np.ndarray:
-    """Infer y-uncertainties when no explicit error column is present.
-
-    The heuristic depends on ``error_mode``:
-
-    - ``"poisson"`` — assumes counting statistics: σ = √y (clipped to ≥ 0).
-    - ``"fraction"`` — uniform relative uncertainty: σ = |y| × default_fraction.
-    - ``"auto"`` (default) — if all y-values are non-negative integers,
-      applies Poisson statistics; otherwise uses a relative uncertainty
-      of ``default_fraction`` (default 5 %).
-
-    This is a convenience for quick exploration. For publishable results
-    always provide explicit uncertainties.
-    """
-    mode = error_mode.lower()
-    if mode not in {"auto", "poisson", "fraction"}:
-        raise ValueError("error_mode must be one of: auto, poisson, fraction")
+def _infer_y_err(y: np.ndarray, *, default_fraction: float, error_mode: str) -> tuple[np.ndarray, str]:
+    """Return inferred sigmas and a description of the assumed noise model."""
+    mode = error_mode
+    counts = np.all(y >= 0.0) and np.all(y == np.floor(y))
+    if mode == "auto":
+        mode = "poisson" if counts else "fraction"
     if mode == "poisson":
-        return np.sqrt(np.clip(y, 0.0, None))
-    if mode == "fraction":
-        return np.abs(y) * float(default_fraction)
-
-    finite_y = np.asarray(y, dtype=float)
-    if np.all(finite_y >= 0.0) and np.allclose(finite_y, np.round(finite_y)):
-        return np.sqrt(np.clip(finite_y, 0.0, None))
-    return np.abs(finite_y) * float(default_fraction)
+        if not counts:
+            raise ValueError(
+                "Poisson inference requires nonnegative integer counts; provide explicit errors "
+                "or use error_mode='fraction' or 'unweighted'"
+            )
+        return np.sqrt(np.maximum(y, 1.0)), "poisson: sqrt(max(y, 1)) (one-count variance floor)"
+    try:
+        fraction = float(default_fraction)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("default_fraction must be finite and strictly positive") from exc
+    if not np.isfinite(fraction) or fraction <= 0:
+        raise ValueError("default_fraction must be finite and strictly positive")
+    if np.any(y == 0):
+        raise ValueError(
+            "Cannot infer positive fractional uncertainties for zero y-values; "
+            "provide explicit errors or use error_mode='unweighted'"
+        )
+    with np.errstate(over="ignore", under="ignore"):
+        sigma = np.abs(y) * fraction
+    if not np.all(np.isfinite(sigma)) or np.any(sigma <= 0):
+        raise ValueError(
+            "Cannot infer finite positive fractional uncertainties at this scale; "
+            "provide explicit errors or use error_mode='unweighted'"
+        )
+    return sigma, f"fraction: abs(y) * {fraction!r}"
 
 
 def _load_series(
-    path,
+    path: str | Path,
     *,
     delimiter: str | None,
-    x_col,
-    y_col,
-    y_err_col=None,
+    x_col: str | int,
+    y_col: str | int,
+    y_err_col: str | int | None = None,
     default_fraction: float = 0.05,
     error_mode: str = "auto",
     label: str = "",
 ) -> DataSeries:
+    mode = _validate_error_mode(error_mode)
+    if mode == "unweighted" and y_err_col is not None:
+        raise ValueError("y_err_col cannot be combined with error_mode='unweighted'")
     path = _coerce_path(path)
     header, rows = _read_table(path, delimiter)
 
@@ -155,7 +176,11 @@ def _load_series(
     y_index = _resolve_column(y_col, header)
     x = _extract_column(rows, x_index)
     y = _extract_column(rows, y_index)
+    data = DataSeries(x=x, y=y, label=label)
+    if mode == "unweighted":
+        return data
 
+    inference = None
     y_err = None
     sigma_low = None
     sigma_high = None
@@ -188,22 +213,72 @@ def _load_series(
                     fraction = _extract_column(rows, header.index(candidate))
                     y_err = np.abs(y) * fraction
                     break
-            if y_err is None:
-                y_err = _infer_y_err(y, default_fraction=default_fraction, error_mode=error_mode)
+            if y_err is None and sigma_low is None and sigma_high is None:
+                y_err, inference = _infer_y_err(y, default_fraction=default_fraction, error_mode=mode)
 
-    return DataSeries(x=x, y=y, y_err=y_err, sigma_low=sigma_low, sigma_high=sigma_high, label=label)
+    series = DataSeries(
+        x=x,
+        y=y,
+        y_err=y_err,
+        sigma_low=sigma_low,
+        sigma_high=sigma_high,
+        label=label,
+        uncertainty_inference=inference,
+    )
+    if inference is not None:
+        warnings.warn(
+            f"Inferred measurement uncertainties for {path}: {inference}. "
+            "These are heuristic errors, not calibrated measurements; provide explicit error columns "
+            "or use error_mode='unweighted' to disable inference.",
+            UncertaintyInferenceWarning,
+            stacklevel=3,
+        )
+    return series
 
 
 def load_csv(
-    path,
-    x_col="x",
-    y_col="y",
-    y_err_col=None,
+    path: str | Path,
+    x_col: str | int = "x",
+    y_col: str | int = "y",
+    y_err_col: str | int | None = None,
     *,
     default_fraction: float = 0.05,
     error_mode: str = "auto",
     label: str = "",
 ) -> DataSeries:
+    """Load CSV data, choosing explicit errors, inferred errors, or an unweighted series.
+
+    Parameters
+    ----------
+    path : str or Path
+        File to read.
+    x_col, y_col : str or int
+        Column names or zero-based indices; defaults are "x" and "y".
+    y_err_col : str or int, optional
+        Explicit 1-sigma error column. Otherwise recognize common symmetric,
+        fractional and asymmetric error-column names automatically. Cannot be
+        combined with the unweighted mode.
+    default_fraction : float, default 0.05
+        Finite positive fraction used only when fractional errors are inferred.
+    error_mode : {"auto", "poisson", "fraction", "unweighted"}, default "auto"
+        "unweighted" reads only x/y, ignoring all error columns and disabling
+        inference. Other modes use explicit errors when present. Without errors,
+        "auto" selects Poisson inference for nonnegative integer counts and
+        fractional inference otherwise. "poisson" requires nonnegative integer
+        counts and approximates sigma as sqrt(max(y, 1)), including zero counts.
+        "fraction" uses abs(y) * default_fraction; zeros require explicit errors
+        or unweighted loading because there is no scale for a positive sigma.
+    label : str, optional
+        Label for plots.
+
+    Returns
+    -------
+    DataSeries
+        Inferred errors emit UncertaintyInferenceWarning and record the formula
+        in ``uncertainty_inference``; ``uncertainties_inferred`` flags their use.
+        These are exploratory heuristics, not calibrated measurement errors or
+        exact Poisson confidence intervals, especially at low counts.
+    """
     return _load_series(
         path,
         delimiter=",",
@@ -217,15 +292,24 @@ def load_csv(
 
 
 def load_txt(
-    path,
-    x_col="x",
-    y_col="y",
-    y_err_col=None,
+    path: str | Path,
+    x_col: str | int = "x",
+    y_col: str | int = "y",
+    y_err_col: str | int | None = None,
     *,
     default_fraction: float = 0.05,
     error_mode: str = "auto",
     label: str = "",
 ) -> DataSeries:
+    """Load a whitespace-delimited table using the same error policy as :func:`load_csv`.
+
+    ``error_mode="unweighted"`` loads only x/y. Otherwise explicit error columns
+    take precedence over the selected inference heuristic. Inferred errors emit
+    :class:`UncertaintyInferenceWarning` and record their formula on the returned
+    series. Poisson inference requires nonnegative integer counts and uses a
+    one-count variance floor; fractional inference cannot assign errors to zero
+    y-values. Column selectors, default_fraction and label match :func:`load_csv`.
+    """
     return _load_series(
         path,
         delimiter=None,
@@ -250,4 +334,4 @@ def combine_series(*series: DataSeries | Dataset | Iterable[DataSeries]) -> Data
     return Dataset(combined)
 
 
-__all__ = ["load_csv", "load_txt", "combine_series"]
+__all__ = ["UncertaintyInferenceWarning", "load_csv", "load_txt", "combine_series"]

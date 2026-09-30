@@ -4,81 +4,90 @@ import functools
 import inspect
 from collections import OrderedDict
 from collections.abc import Callable
+from typing import Concatenate, ParamSpec, Protocol
 
 import numpy as np
+from numpy.typing import ArrayLike
 from scipy.special import voigt_profile
 from scipy.stats import exponnorm, skewnorm
 
+from .types import ModelFunction, ModelSpec
 
-def _as_x(func):
-    """Decorator that converts the first argument ``x`` to a float ndarray."""
+_P = ParamSpec("_P")
+
+
+class _ArrayModel(Protocol[_P]):
+    def __call__(self, x: ArrayLike, *args: _P.args, **kwargs: _P.kwargs) -> np.ndarray: ...
+
+
+def _as_x(func: Callable[Concatenate[np.ndarray, _P], np.ndarray]) -> _ArrayModel[_P]:
+    """Convert x to a float array while preserving the complete model signature."""
 
     @functools.wraps(func)
-    def wrapper(x, *args, **kwargs):
-        x = np.asarray(x, dtype=float)
-        return func(x, *args, **kwargs)
+    def wrapper(x: ArrayLike, *args: _P.args, **kwargs: _P.kwargs) -> np.ndarray:
+        return func(np.asarray(x, dtype=float), *args, **kwargs)
 
     return wrapper
 
 
 @_as_x
-def constant(x, level):
+def constant(x: np.ndarray, level: float) -> np.ndarray:
     """Horizontal line at a fixed y-value."""
     return np.full_like(x, level, dtype=float)
 
 
 @_as_x
-def linear(x, slope, intercept):
+def linear(x: np.ndarray, slope: float, intercept: float) -> np.ndarray:
     """Straight line with constant gradient."""
     return slope * x + intercept
 
 
 @_as_x
-def quadratic(x, a, b, c):
+def quadratic(x: np.ndarray, a: float, b: float, c: float) -> np.ndarray:
     """Second-degree polynomial (parabola)."""
     return a * x**2 + b * x + c
 
 
 @_as_x
-def cubic(x, a, b, c, d):
+def cubic(x: np.ndarray, a: float, b: float, c: float, d: float) -> np.ndarray:
     """Third-degree polynomial."""
     return ((a * x + b) * x + c) * x + d
 
 
 @_as_x
-def gaussian(x, amplitude, mean, sigma):
+def gaussian(x: np.ndarray, amplitude: float, mean: float, sigma: float) -> np.ndarray:
     """Symmetric bell-shaped peak (normal distribution)."""
-    sigma = np.asarray(sigma, dtype=float)
-    return amplitude * np.exp(-0.5 * ((x - mean) / sigma) ** 2)
+    sigma_array = np.asarray(sigma, dtype=float)
+    return amplitude * np.exp(-0.5 * ((x - mean) / sigma_array) ** 2)
 
 
 @_as_x
-def lorentzian(x, amplitude, center, gamma):
+def lorentzian(x: np.ndarray, amplitude: float, center: float, gamma: float) -> np.ndarray:
     """Peak with a narrower core and heavier tails than a Gaussian.
 
     Also known as the Cauchy or Breit-Wigner distribution. Common in
     spectroscopy for natural line shapes and in particle physics for
     resonance profiles.
     """
-    gamma = np.asarray(gamma, dtype=float)
-    return amplitude * (gamma**2 / ((x - center) ** 2 + gamma**2))
+    gamma_array = np.asarray(gamma, dtype=float)
+    return amplitude * (gamma_array**2 / ((x - center) ** 2 + gamma_array**2))
 
 
 @_as_x
-def exponential(x, amplitude, decay):
+def exponential(x: np.ndarray, amplitude: float, decay: float) -> np.ndarray:
     """Exponential decay starting from ``amplitude`` at ``x = 0``."""
     return amplitude * np.exp(-decay * x)
 
 
 @_as_x
-def power_law(x, amplitude, exponent):
+def power_law(x: np.ndarray, amplitude: float, exponent: float) -> np.ndarray:
     """Power-law scaling with a variable exponent."""
     with np.errstate(divide="ignore", invalid="ignore"):
         return amplitude * np.power(x, exponent)
 
 
 @_as_x
-def logistic(x, amplitude, x0, k, baseline=0.0):
+def logistic(x: np.ndarray, amplitude: float, x0: float, k: float, baseline: float = 0.0) -> np.ndarray:
     """Sigmoidal curve with a tunable steepness.
 
     Transitions smoothly from ``baseline`` to ``baseline + amplitude``
@@ -89,19 +98,23 @@ def logistic(x, amplitude, x0, k, baseline=0.0):
 
 
 @_as_x
-def sine(x, amplitude, frequency, phase, offset=0.0):
+def sine(x: np.ndarray, amplitude: float, frequency: float, phase: float, offset: float = 0.0) -> np.ndarray:
     """Sinusoidal oscillation with tunable frequency and phase."""
     return offset + amplitude * np.sin(2.0 * np.pi * frequency * x + phase)
 
 
 @_as_x
-def cosine(x, amplitude, frequency, phase, offset=0.0):
+def cosine(
+    x: np.ndarray, amplitude: float, frequency: float, phase: float, offset: float = 0.0
+) -> np.ndarray:
     """Cosinusoidal oscillation with tunable frequency and phase."""
     return offset + amplitude * np.cos(2.0 * np.pi * frequency * x + phase)
 
 
 @_as_x
-def damped_oscillator(x, amplitude, damping, frequency, phase):
+def damped_oscillator(
+    x: np.ndarray, amplitude: float, damping: float, frequency: float, phase: float
+) -> np.ndarray:
     """Oscillation that decays exponentially (cosine form).
 
     Represents a harmonic oscillator with friction, such as a swinging
@@ -111,7 +124,9 @@ def damped_oscillator(x, amplitude, damping, frequency, phase):
 
 
 @_as_x
-def damped_sine(x, amplitude, damping, frequency, phase, offset=0.0):
+def damped_sine(
+    x: np.ndarray, amplitude: float, damping: float, frequency: float, phase: float, offset: float = 0.0
+) -> np.ndarray:
     """Oscillation that decays exponentially (sine form).
 
     Identical in form to the damped oscillator but uses sine instead of
@@ -121,7 +136,7 @@ def damped_sine(x, amplitude, damping, frequency, phase, offset=0.0):
 
 
 @_as_x
-def sinc(x, amplitude, center, width):
+def sinc(x: np.ndarray, amplitude: float, center: float, width: float) -> np.ndarray:
     """Central peak with oscillating sidelobes.
 
     Defined as sin(u)/u where u depends on the distance from ``center``
@@ -136,7 +151,7 @@ def sinc(x, amplitude, center, width):
 
 
 @_as_x
-def exponential_rise(x, amplitude, tau, offset=0.0):
+def exponential_rise(x: np.ndarray, amplitude: float, tau: float, offset: float = 0.0) -> np.ndarray:
     """Saturation curve approaching an asymptotic value.
 
     Starts at ``offset`` and rises exponentially toward
@@ -148,7 +163,9 @@ def exponential_rise(x, amplitude, tau, offset=0.0):
 
 
 @_as_x
-def double_exponential(x, amplitude1, tau1, amplitude2, tau2):
+def double_exponential(
+    x: np.ndarray, amplitude1: float, tau1: float, amplitude2: float, tau2: float
+) -> np.ndarray:
     """Sum of two exponential decays with distinct time constants.
 
     Useful when a process has both a fast and a slow relaxation
@@ -159,7 +176,7 @@ def double_exponential(x, amplitude1, tau1, amplitude2, tau2):
 
 
 @_as_x
-def moffat(x, amplitude, x0, alpha, beta):
+def moffat(x: np.ndarray, amplitude: float, x0: float, alpha: float, beta: float) -> np.ndarray:
     """Peak with power-law tails controlled by an exponent.
 
     Similar to a Lorentzian near the centre but with a variable
@@ -171,25 +188,35 @@ def moffat(x, amplitude, x0, alpha, beta):
 
 
 @_as_x
-def gaussian_baseline(x, amplitude, mean, sigma, m, b):
+def gaussian_baseline(
+    x: np.ndarray, amplitude: float, mean: float, sigma: float, m: float, b: float
+) -> np.ndarray:
     """Gaussian peak superimposed on a linear background."""
-    sigma = np.asarray(sigma, dtype=float)
-    g = amplitude * np.exp(-0.5 * ((x - mean) / sigma) ** 2)
+    sigma_array = np.asarray(sigma, dtype=float)
+    g = amplitude * np.exp(-0.5 * ((x - mean) / sigma_array) ** 2)
     return g + m * x + b
 
 
 @_as_x
-def bimodal_gaussian(x, amplitude1, mean1, sigma1, amplitude2, mean2, sigma2):
+def bimodal_gaussian(
+    x: np.ndarray,
+    amplitude1: float,
+    mean1: float,
+    sigma1: float,
+    amplitude2: float,
+    mean2: float,
+    sigma2: float,
+) -> np.ndarray:
     """Sum of two independent Gaussian peaks.
 
     Models data with two resolved components — for example, emission
     lines from closely spaced energy levels, overlapping diffraction
     peaks, or multi-species velocity distributions.
     """
-    sigma1 = np.asarray(sigma1, dtype=float)
-    sigma2 = np.asarray(sigma2, dtype=float)
-    g1 = amplitude1 * np.exp(-0.5 * ((x - mean1) / sigma1) ** 2)
-    g2 = amplitude2 * np.exp(-0.5 * ((x - mean2) / sigma2) ** 2)
+    sigma1_array = np.asarray(sigma1, dtype=float)
+    sigma2_array = np.asarray(sigma2, dtype=float)
+    g1 = amplitude1 * np.exp(-0.5 * ((x - mean1) / sigma1_array) ** 2)
+    g2 = amplitude2 * np.exp(-0.5 * ((x - mean2) / sigma2_array) ** 2)
     return g1 + g2
 
 
@@ -200,7 +227,7 @@ FWHM2SIGMA = 1.0 / (2.0 * np.sqrt(2.0 * np.log(2.0)))
 
 
 @_as_x
-def voigt(x, amplitude, center, sigma, gamma):
+def voigt(x: np.ndarray, amplitude: float, center: float, sigma: float, gamma: float) -> np.ndarray:
     """Symmetric peak shape with a Gaussian core and Lorentzian wings.
 
     The Voigt profile is the convolution of a Gaussian and a Lorentzian
@@ -211,7 +238,7 @@ def voigt(x, amplitude, center, sigma, gamma):
 
 
 @_as_x
-def skew_normal(x, amplitude, location, scale, alpha):
+def skew_normal(x: np.ndarray, amplitude: float, location: float, scale: float, alpha: float) -> np.ndarray:
     """Asymmetric bell-shaped curve with a shape parameter.
 
     Generalises the normal distribution by adding a skewness parameter
@@ -223,7 +250,7 @@ def skew_normal(x, amplitude, location, scale, alpha):
 
 
 @_as_x
-def gaussian_fwhm(x, amplitude, center, fwhm):
+def gaussian_fwhm(x: np.ndarray, amplitude: float, center: float, fwhm: float) -> np.ndarray:
     """Gaussian peak parameterised by its full width at half maximum.
 
     Identical to the standard Gaussian model but accepts the peak width
@@ -235,7 +262,7 @@ def gaussian_fwhm(x, amplitude, center, fwhm):
 
 
 @_as_x
-def lorentzian_fwhm(x, amplitude, center, fwhm):
+def lorentzian_fwhm(x: np.ndarray, amplitude: float, center: float, fwhm: float) -> np.ndarray:
     """Lorentzian peak parameterised by its full width at half maximum.
 
     Identical to the standard Lorentzian model but accepts the peak
@@ -247,7 +274,7 @@ def lorentzian_fwhm(x, amplitude, center, fwhm):
 
 
 @_as_x
-def exgaussian(x, amplitude, mu, sigma, tau):
+def exgaussian(x: np.ndarray, amplitude: float, mu: float, sigma: float, tau: float) -> np.ndarray:
     """Asymmetric peak with a Gaussian rise and exponential tail.
 
     The exponentially modified Gaussian (ExGaussian) is the convolution
@@ -257,13 +284,15 @@ def exgaussian(x, amplitude, mu, sigma, tau):
     data, and detector pulses. ``amplitude`` is the integrated area;
     ``sigma`` and ``tau`` must be positive.
     """
-    sigma = np.asarray(sigma, dtype=float)
-    tau = np.asarray(tau, dtype=float)
-    return amplitude * exponnorm.pdf(x, tau / sigma, loc=mu, scale=sigma)
+    sigma_array = np.asarray(sigma, dtype=float)
+    tau_array = np.asarray(tau, dtype=float)
+    return amplitude * exponnorm.pdf(x, tau_array / sigma_array, loc=mu, scale=sigma_array)
 
 
 @_as_x
-def stretched_exponential(x, amplitude, tau, beta, offset=0.0):
+def stretched_exponential(
+    x: np.ndarray, amplitude: float, tau: float, beta: float, offset: float = 0.0
+) -> np.ndarray:
     """Decay function with a variable stretching exponent.
 
     A generalisation of the exponential decay where the time constant
@@ -272,14 +301,14 @@ def stretched_exponential(x, amplitude, tau, beta, offset=0.0):
     a slower, stretched decay. Commonly used to model relaxation in
     disordered systems such as polymers, glasses, and biological tissues.
     """
-    tau = np.asarray(tau, dtype=float)
-    beta = np.asarray(beta, dtype=float)
+    tau_array = np.asarray(tau, dtype=float)
+    beta_array = np.asarray(beta, dtype=float)
     with np.errstate(over="ignore", invalid="ignore"):
-        return offset + amplitude * np.exp(-((x / tau) ** beta))
+        return offset + amplitude * np.exp(-((x / tau_array) ** beta_array))
 
 
 @_as_x
-def tanh(x, amplitude, center, width, offset=0.0):
+def tanh(x: np.ndarray, amplitude: float, center: float, width: float, offset: float = 0.0) -> np.ndarray:
     """Smooth sigmoidal step with a hyperbolic-tangent shape.
 
     Produces a monotonic transition from one level to another, centred
@@ -291,7 +320,7 @@ def tanh(x, amplitude, center, width, offset=0.0):
 
 
 @_as_x
-def arctan(x, amplitude, center, width, offset=0.0):
+def arctan(x: np.ndarray, amplitude: float, center: float, width: float, offset: float = 0.0) -> np.ndarray:
     """Smooth step with broad polynomial tails.
 
     Similar to a hyperbolic-tangent step but approaches the asymptotic
@@ -303,7 +332,9 @@ def arctan(x, amplitude, center, width, offset=0.0):
 
 
 @_as_x
-def beat(x, amplitude, frequency1, frequency2, phase, offset=0.0):
+def beat(
+    x: np.ndarray, amplitude: float, frequency1: float, frequency2: float, phase: float, offset: float = 0.0
+) -> np.ndarray:
     """Superposition of two cosine waves of nearby frequencies.
 
     Models the acoustic or electronic beat phenomenon where two
@@ -317,7 +348,7 @@ def beat(x, amplitude, frequency1, frequency2, phase, offset=0.0):
 
 
 @_as_x
-def rational(x, amplitude, x0):
+def rational(x: np.ndarray, amplitude: float, x0: float) -> np.ndarray:
     """First-order rational function with a single pole.
 
     Produces a simple resonance lineshape with a singularity at ``x0``.
@@ -331,18 +362,18 @@ def rational(x, amplitude, x0):
 
 
 @_as_x
-def quartic(x, a, b, c, d, e):
+def quartic(x: np.ndarray, a: float, b: float, c: float, d: float, e: float) -> np.ndarray:
     """Fourth-degree polynomial."""
     return ((a * x + b) * x + c) * x * x + d * x + e
 
 
 @_as_x
-def quintic(x, a, b, c, d, e, f):
+def quintic(x: np.ndarray, a: float, b: float, c: float, d: float, e: float, f: float) -> np.ndarray:
     """Fifth-degree polynomial."""
     return (((a * x + b) * x + c) * x + d) * x * x + e * x + f
 
 
-MODEL_REGISTRY: OrderedDict[str, Callable] = OrderedDict(
+MODEL_REGISTRY: OrderedDict[str, ModelFunction] = OrderedDict(
     [
         ("constant", constant),
         ("linear", linear),
@@ -381,7 +412,7 @@ MODEL_REGISTRY: OrderedDict[str, Callable] = OrderedDict(
 MODEL_NAMES = tuple(MODEL_REGISTRY.keys())
 
 
-def get_model(model):
+def get_model(model: ModelSpec) -> tuple[ModelFunction, str]:
     if callable(model):
         return model, getattr(model, "__name__", "custom")
     if model is None:
@@ -394,7 +425,7 @@ def get_model(model):
     raise TypeError("model must be a callable or model name string")
 
 
-def model_param_names(model):
+def model_param_names(model: ModelSpec) -> tuple[str, ...]:
     fn, _ = get_model(model)
     sig = inspect.signature(fn)
     params = list(sig.parameters.values())

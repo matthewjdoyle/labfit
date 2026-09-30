@@ -4,7 +4,7 @@ Based on the repository review of 2026-09-30. Keep the review IDs stable.
 Check an item only when its acceptance criteria are implemented and verified;
 record partial progress without closing the whole item.
 
-Progress: **9 of 14 review items complete**; R14 partially addressed.
+Progress: **13 of 14 review items complete**; R14 partially addressed.
 
 P1: incorrect or misleading scientific results. P2: reliability, usability,
 performance, and maintenance.
@@ -40,7 +40,7 @@ performance, and maintenance.
   the propagation example. Replace unsupported asymmetric sigma tuple examples.
   Verify the half-life example numerically.
   Source: `docs/concepts.rst`.
-- [ ] **R07 / P1: Centralize uncertainty validation.** Validate normalized
+- [x] **R07 / P1: Centralize uncertainty validation.** Validate normalized
   overrides as well as raw arrays: finite values, dimensions, positive sigmas,
   explicit zero-weight policy, nonnegative weights, complete asymmetric pairs,
   mutually exclusive specifications, symmetric positive-definite covariance.
@@ -49,7 +49,7 @@ performance, and maintenance.
 
 ## Input and plotting reliability
 
-- [ ] **R08 / P2: Make inferred file uncertainties explicit.** Add an unweighted
+- [x] **R08 / P2: Make inferred file uncertainties explicit.** Add an unweighted
   loading mode and record/warn about inferred errors. Decide a defensible policy
   for zero counts; a CSV with y=[0,1,2] currently fails with zero sigma.
   Source: `labfit/io.py`.
@@ -92,11 +92,11 @@ performance, and maintenance.
   the complete documented prediction-band example. Together with the preceding
   covariance, rank, model-reference and half-life-example regressions, all R11
   acceptance criteria are now covered and verified.
-- [ ] **R12 / P2: Optimize correlated fitting and confidence bands.** Use a
+- [x] **R12 / P2: Optimize correlated fitting and confidence bands.** Use a
   triangular solve for Cholesky factors and vectorize model evaluations across
   the prediction grid. Extend benchmarks and compare numerical results/timings.
   Source: `labfit/fitter_impl.py`, `labfit/plot.py`, `benchmarks/`.
-- [ ] **R13 / P2: Enforce the documented typing policy.** Annotate public APIs,
+- [x] **R13 / P2: Enforce the documented typing policy.** Annotate public APIs,
   enable check_untyped_defs during migration, then enforce untyped-definition
   checks. Include a py.typed marker for downstream consumers.
   Source: `pyproject.toml`, `CONTRIBUTING.md`, `labfit/`.
@@ -168,8 +168,97 @@ performance, and maintenance.
   with warnings treated as errors using installed Sphinx 8.2.3 (declared docs
   range remains Sphinx 7.x).
 
+- R07 (2026-09-30): centralized error validation across DataSeries,
+  AsymmetricError, effective_sigma and fitting, including normalized overrides.
+  Reject nonfinite/malformed errors, nonpositive sigmas, incomplete asymmetric
+  pairs, competing specifications, and nonsymmetric/non-positive-definite
+  covariance. Negative weights now raise instead of silently discarding data;
+  finite zero weights explicitly exclude samples from model evaluation, initial
+  guesses, result data/default plots and all statistics. Require at least one
+  retained sample and use its count for degrees of freedom. Explicit fitting
+  errors replace the complete stored specification; result.series carries the
+  errors actually fitted and preserves asymmetric sides. CSV/TXT asymmetric
+  columns no longer trigger competing inferred symmetric errors. Alias agreement
+  uses a relative tolerance independent of measurement units; asymmetric RMS
+  avoids overflow. Added 282 regression cases, including independent weighted
+  linear references, override/entry-point validation, plotted sample exclusion,
+  covariance scaling and execution of the documented zero-weight example.
+  Validation: 437 tests passed (29 warnings), 93.66% package coverage;
+  Ruff 0.11.10 lint/format checks and mypy passed. HTML docs built successfully
+  with warnings treated as errors using installed Sphinx 8.2.3 (declared docs
+  range remains Sphinx 7.x). Zero-count inferred errors remain tracked by R08.
+
+- R08 (2026-09-30): added error_mode="unweighted" to CSV/TXT loaders, reading
+  only x/y and disabling both error columns and inference. The default auto mode
+  remains, but every successful inference emits UncertaintyInferenceWarning
+  naming the file and formula. DataSeries.uncertainties_inferred and
+  uncertainty_inference retain the formula/settings through relabeling,
+  combination and fitting; summaries identify inferred errors. Explicit fit
+  overrides clear result provenance and bypass unused CSV error columns/inference.
+  Counting inference now requires nonnegative integer values and uses
+  sqrt(max(y, 1)): zero counts retain a finite sigma of 1, while positive counts
+  keep sqrt(y). This is a documented one-count variance-floor approximation for
+  exploration, not an exact Poisson interval. Fractional inference validates its
+  scale, rejects zero-valued measurements with actionable guidance, and rejects
+  overflow/underflow. Mode validation also runs when errors are supplied; explicit
+  file errors still take precedence in all inference modes. Added 127 regression
+  cases for both loaders, zero counts, warnings, provenance, explicit overrides,
+  independent weighted/unweighted linear references and a runnable loading example.
+  Validation: 564 tests passed (29 warnings), 94.21% package coverage;
+  Ruff 0.11.10 lint/format checks and mypy passed. HTML docs built successfully
+  with warnings treated as errors using installed Sphinx 8.2.3 (declared docs
+  range remains Sphinx 7.x).
+
+- R12 (2026-09-30): replaced general dense solves on lower Cholesky factors
+  with scipy.linalg.solve_triangular for correlated residuals and chi-square.
+  Confidence/prediction bands evaluate perturbations across the whole grid and
+  contract parameter gradients/covariance in one array operation. Model calls
+  now total 2*k + 1 rather than 2*k*N + 1. Added 22 regression cases for independent
+  generalized linear statistics, analytical nonlinear Gaussian band derivatives,
+  grid-independent call counts, edge grids and benchmark/report verification.
+  Extended benchmarks with a deterministic reference/optimized runner covering
+  whitening, full correlated linear/Gaussian fits and both band types. Alternating
+  timing order, 2 warmups and 7 measured repetitions; seed 20260930, single-thread
+  BLAS settings, sizes 32/128/512 and band grids 200/2000. All numerical comparisons
+  passed at rtol=2e-6, atol=1e-9; maximum parameter difference 3.46e-10 and band
+  endpoint difference 8.88e-16. At 512 observations, whitening improved 46.91x;
+  complete linear/Gaussian fits improved 1.76x/2.39x. At 2000 grid points, linear
+  confidence/prediction calculations improved 169.98x/136.07x, and Gaussian
+  calculations improved 229.40x/192.34x. Band timings exclude rendering and I/O;
+  full-fit timings include unchanged covariance validation/factorization.
+  Results and method: benchmarks/R12_RESULTS.md and benchmarks/README.md.
+  Raw timings, numerical deltas, configuration/environment and exact source hashes
+  are saved under benchmarks/results/r12/20260930T131712874562Z/.
+  Validation: 586 tests passed (29 warnings), 94.44% package coverage;
+  Ruff 0.11.10 lint/format checks and mypy passed. HTML docs built successfully
+  with warnings treated as errors using installed Sphinx 8.2.3 (declared docs
+  range remains Sphinx 7.x).
+
+- R13 (2026-09-30): annotated fitting, loading, plotting, model and uncertainty
+  APIs plus container methods, private helpers and nested functions. Typed model
+  decorators preserve array-like x inputs, named parameters and return types;
+  dataclass constructor types accept array-like values while stored fields remain
+  normalized arrays. Replaced untyped guess statistics with a typed NamedTuple
+  and uncertainty dictionaries with a TypedDict. Enabled check_untyped_defs and
+  disallow_untyped_defs without per-module enforcement exceptions. Added a
+  py.typed marker and explicit setuptools package-data inclusion; updated
+  CONTRIBUTING.md and CHANGELOG.md. Two consumer regression tests verify valid
+  public calls and inferred types, reject invalid argument/return types and model
+  parameter names, and enforce rejection of untyped definitions.
+  Validation: 588 tests passed (29 existing warnings), 94.59% package coverage;
+  Ruff 0.11.10 lint/format checks and mypy 1.17.0 passed, including a static
+  check targeting Python 3.10. HTML docs built with
+  warnings as errors using installed Sphinx 8.2.3 (declared docs range remains
+  Sphinx 7.x). Built wheel and source distribution in a temporary staging copy;
+  both include labfit/py.typed. Installed the wheel into a separate directory,
+  confirmed its import path and a successful linear fit, and verified positive
+  and negative external mypy consumers against that installed package. These
+  checks reused the existing scientific dependencies; the fully clean-environment
+  installation and release gates remain part of R14. Validation environment:
+  Windows / Python 3.13.1; older supported Python runtimes were not executed.
+
 ## Next suggested batch
 
-Address R07: centralize validation of all uncertainty specifications, including
-normalized overrides, invalid weights, asymmetric pairs and positive-definite
-covariance. R01-R06 and the independent scientific regressions in R11 are complete.
+Address R14: smoke-test distributions in a clean environment, verify the release
+commit before publishing, expand CI beyond Linux and make development-tool
+versions reproducible. R01-R13 are complete; R14 remains partially addressed.

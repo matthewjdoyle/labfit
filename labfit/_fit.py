@@ -1,9 +1,22 @@
 from __future__ import annotations
 
+from typing import Any
+
 from .fitter_impl import fit as _fit
+from .types import AsymmetricError, Bounds, FitResult, InitialGuess, MaybeArray, ModelSpec
 
 
-def fit_curve(model, x, y, y_err, *, p0=None, bounds=None, label="", **kwargs):
+def fit_curve(
+    model: ModelSpec,
+    x: MaybeArray,
+    y: MaybeArray,
+    y_err: MaybeArray | AsymmetricError,
+    *,
+    p0: InitialGuess = None,
+    bounds: Bounds = None,
+    label: str = "",
+    **kwargs: Any,
+) -> FitResult:
     """Fit a model to data with explicit 1-sigma y uncertainties.
 
     A convenience wrapper around :func:`fit` that keeps the error

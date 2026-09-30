@@ -21,7 +21,7 @@ from labfit import (
     plot_multi_fit,
     plot_residuals,
 )
-from labfit.io import combine_series, load_csv, load_txt
+from labfit.io import UncertaintyInferenceWarning, combine_series, load_csv, load_txt
 from labfit.plot import _as_results, _as_series, _fit_label, plot_result
 from labfit.types import AsymmetricError
 from labfit.utils import propagate_errors
@@ -29,14 +29,12 @@ from labfit.utils import propagate_errors
 
 def test_loader_variants_round_trip_and_series_combination(tmp_path: Path):
     weighted_csv = tmp_path / "weighted.csv"
-    weighted_csv.write_text(
-        "x,y,y_err,sigma_low,sigma_high\n0,1,0.1,0.2,0.3\n1,4,0.2,0.4,0.6\n2,9,0.3,0.6,0.8\n"
-    )
-    weighted = load_csv(weighted_csv, 0, 1, y_err_col="y_err", label="weighted")
+    weighted_csv.write_text("x,y,sigma_low,sigma_high\n0,1,0.2,0.3\n1,4,0.4,0.6\n2,9,0.6,0.8\n")
+    weighted = load_csv(weighted_csv, 0, 1, label="weighted")
     assert weighted.label == "weighted"
     assert np.allclose(weighted.x, [0.0, 1.0, 2.0])
     assert np.allclose(weighted.y, [1.0, 4.0, 9.0])
-    assert np.allclose(weighted.y_err, [0.1, 0.2, 0.3])
+    assert weighted.y_err is None
     assert np.allclose(weighted.sigma_low, [0.2, 0.4, 0.6])
     assert np.allclose(weighted.sigma_high, [0.3, 0.6, 0.8])
 
@@ -47,7 +45,8 @@ def test_loader_variants_round_trip_and_series_combination(tmp_path: Path):
 
     counts_txt = tmp_path / "counts.txt"
     counts_txt.write_text("0 4\n1 9\n2 16\n")
-    counts = load_txt(counts_txt, 0, 1)
+    with pytest.warns(UncertaintyInferenceWarning, match="poisson"):
+        counts = load_txt(counts_txt, 0, 1)
     assert np.allclose(counts.y_err, np.sqrt([4.0, 9.0, 16.0]))
 
     combined = combine_series(weighted, Dataset([fractional]), [counts])
@@ -87,7 +86,7 @@ def test_error_propagation_and_validation_edges():
     with pytest.raises(ValueError, match="sigma and y_err must describe the same uncertainties"):
         DataSeries(x=[0, 1], y=[1, 2], sigma=[0.1, 0.2], y_err=[0.1, 0.3])
 
-    with pytest.raises(ValueError, match="sigma must be non-negative"):
+    with pytest.raises(ValueError, match="sigma must be strictly positive"):
         DataSeries(x=[0, 1], y=[1, 2], sigma=[-0.1, 0.2])
 
     with pytest.raises(ValueError, match="sigma_cov must be a square covariance matrix"):

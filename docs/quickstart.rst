@@ -40,6 +40,12 @@ Save your data to a CSV file with columns::
 
 ``sigma`` is the **1-σ measurement uncertainty** in y.
 
+Files without error columns infer heuristic uncertainties and emit a warning
+that identifies the assumption. To fit without an error model, use
+``fit(load_csv("mydata.csv", error_mode="unweighted"))``, importing ``load_csv``
+from ``labfit.io``. See :ref:`utilities` for inference provenance, explicit modes
+and the one-count variance floor used for zero counts.
+
 Alternatively, when errors are asymmetric use ``sigma_low`` and ``sigma_high`` separately. LabFit converts them into an effective standard deviation for the fit and keeps the original bounds for plotting.
 
 CSV → fit → plot (10 seconds)

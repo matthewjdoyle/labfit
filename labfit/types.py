@@ -1,29 +1,136 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Callable, ItemsView, Iterable, Iterator, KeysView, Sequence, ValuesView
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+from numpy.typing import ArrayLike
 
 MaybeArray = np.ndarray | Sequence[float] | float
+ModelFunction = Callable[..., ArrayLike]
+ModelSpec = str | ModelFunction | None
+InitialGuess = dict[str, float] | MaybeArray | None
+Bounds = (
+    dict[str, tuple[float | None, float | None]] | tuple[MaybeArray, MaybeArray] | list[MaybeArray] | None
+)
+
+
+def _error_array(name: str, value: MaybeArray, n: int | None = None, *, weights: bool = False) -> np.ndarray:
+    array = np.asarray(value, dtype=float)
+    if array.ndim > 1:
+        raise ValueError(f"{name} must be a scalar or one-dimensional array")
+    if n is not None and array.ndim == 1 and array.size != n:
+        raise ValueError(f"{name} must have the same length as x and y")
+    if not np.all(np.isfinite(array)):
+        raise ValueError(f"{name} must contain only finite values")
+    if weights:
+        if np.any(array < 0):
+            raise ValueError("weights must be non-negative")
+        if not np.any(array > 0):
+            raise ValueError("weights must contain at least one positive value; zero weights exclude samples")
+    elif np.any(array <= 0):
+        raise ValueError(f"{name} must be strictly positive")
+    return array
+
+
+def _asymmetric_sigma(lower: np.ndarray, upper: np.ndarray) -> np.ndarray:
+    # Scaling before hypot avoids overflow when finite errors are very large.
+    return np.hypot(lower / np.sqrt(2.0), upper / np.sqrt(2.0))
 
 
 @dataclass(frozen=True)
 class AsymmetricError:
+    """Finite, strictly positive lower/upper errors of matching scalar or 1D shape."""
+
     lower: np.ndarray
     upper: np.ndarray
 
+    if TYPE_CHECKING:
+
+        def __init__(self, lower: MaybeArray, upper: MaybeArray) -> None: ...
+
+    def __post_init__(self) -> None:
+        lower = _error_array("sigma lower", self.lower)
+        upper = _error_array("sigma upper", self.upper)
+        if lower.shape != upper.shape:
+            raise ValueError("sigma lower and upper arrays must have the same shape")
+        object.__setattr__(self, "lower", lower)
+        object.__setattr__(self, "upper", upper)
+
     @property
     def effective(self) -> np.ndarray:
-        lower = np.asarray(self.lower, dtype=float)
-        upper = np.asarray(self.upper, dtype=float)
-        return np.sqrt((lower**2 + upper**2) / 2.0)
+        sigma, _ = _normalize_uncertainties(sigma=self)
+        assert sigma is not None
+        return sigma
+
+
+def _normalize_uncertainties(
+    n: int | None = None,
+    *,
+    sigma: MaybeArray | AsymmetricError | None = None,
+    weights: MaybeArray | None = None,
+    sigma_low: MaybeArray | None = None,
+    sigma_high: MaybeArray | None = None,
+    sigma_cov: np.ndarray | Sequence[Sequence[float]] | None = None,
+) -> tuple[np.ndarray | None, np.ndarray | None]:
+    """Validate one complete error specification, then return effective sigma/covariance."""
+    if (sigma_low is None) != (sigma_high is None):
+        raise ValueError("sigma_low and sigma_high must be supplied together")
+    count = sum(value is not None for value in (sigma, weights, sigma_low, sigma_cov))
+    if count > 1:
+        raise ValueError("Pass exactly one of sigma, weights, sigma_low/sigma_high, or sigma_cov")
+    if sigma_cov is not None:
+        covariance = np.asarray(sigma_cov, dtype=float)
+        if (
+            covariance.ndim != 2
+            or covariance.shape[0] != covariance.shape[1]
+            or (n is not None and covariance.shape != (n, n))
+        ):
+            raise ValueError("sigma_cov must be a square covariance matrix matching x/y length")
+        if not np.all(np.isfinite(covariance)):
+            raise ValueError("sigma_cov must contain only finite values")
+        if not np.allclose(covariance, covariance.T, rtol=1e-12, atol=0.0):
+            raise ValueError("sigma_cov must be symmetric")
+        covariance = covariance + 0.5 * (covariance.T - covariance)
+        try:
+            np.linalg.cholesky(covariance)
+        except np.linalg.LinAlgError as exc:
+            raise ValueError("sigma_cov must be positive-definite") from exc
+        return None, covariance
+    if weights is not None:
+        array = _error_array("weights", weights, n, weights=True)
+        effective = np.full_like(array, np.inf)
+        np.divide(1.0, np.sqrt(array), out=effective, where=array > 0)
+        return effective, None
+    if isinstance(sigma, AsymmetricError):
+        lower = _error_array("sigma lower", sigma.lower, n)
+        upper = _error_array("sigma upper", sigma.upper, n)
+        if lower.shape != upper.shape:
+            raise ValueError("sigma lower and upper arrays must have the same shape")
+        return _asymmetric_sigma(lower, upper), None
+    if sigma_low is not None:
+        assert sigma_high is not None
+        lower = _error_array("sigma_low", sigma_low, n)
+        upper = _error_array("sigma_high", sigma_high, n)
+        if lower.ndim == upper.ndim == 1 and lower.shape != upper.shape:
+            raise ValueError("sigma_low and sigma_high arrays must have the same length")
+        return _asymmetric_sigma(lower, upper), None
+    return (None if sigma is None else _error_array("sigma", sigma, n)), None
 
 
 @dataclass
 class DataSeries:
+    """Finite 1D data with one optional measurement-error specification.
+
+    Errors must be finite and strictly positive scalars or vectors matching the
+    data length. Supply sigma (or its y_err alias), both asymmetric sides, or a
+    symmetric positive-definite covariance matrix, never competing specifications.
+    File loaders record any assumed error formula in ``uncertainty_inference``;
+    ``uncertainties_inferred`` indicates whether measurement errors were inferred.
+    """
+
     x: np.ndarray
     y: np.ndarray
     sigma: MaybeArray | AsymmetricError | None = None
@@ -32,38 +139,26 @@ class DataSeries:
     sigma_low: np.ndarray | None = None
     sigma_high: np.ndarray | None = None
     sigma_cov: np.ndarray | None = None
+    uncertainty_inference: str | None = None
+
+    if TYPE_CHECKING:
+
+        def __init__(
+            self,
+            x: MaybeArray,
+            y: MaybeArray,
+            sigma: MaybeArray | AsymmetricError | None = None,
+            y_err: MaybeArray | AsymmetricError | None = None,
+            label: str = "",
+            sigma_low: MaybeArray | None = None,
+            sigma_high: MaybeArray | None = None,
+            sigma_cov: np.ndarray | Sequence[Sequence[float]] | None = None,
+            uncertainty_inference: str | None = None,
+        ) -> None: ...
 
     def __post_init__(self) -> None:
         self.x = np.asarray(self.x, dtype=float)
         self.y = np.asarray(self.y, dtype=float)
-
-        # sigma is canonical; y_err is an alias that mirrors it
-        if self.sigma is not None and self.y_err is not None:
-            sigma_eff = (
-                self.sigma.effective
-                if isinstance(self.sigma, AsymmetricError)
-                else np.asarray(self.sigma, dtype=float)
-            )
-            y_err_eff = (
-                self.y_err.effective
-                if isinstance(self.y_err, AsymmetricError)
-                else np.asarray(self.y_err, dtype=float)
-            )
-            if not np.allclose(sigma_eff, y_err_eff):
-                raise ValueError("sigma and y_err must describe the same uncertainties")
-        elif self.sigma is None and self.y_err is not None:
-            self.sigma = self.y_err
-        self.y_err = self.sigma
-
-        if self.sigma is not None and not isinstance(self.sigma, AsymmetricError):
-            self.sigma = np.asarray(self.sigma, dtype=float)
-        if self.sigma_low is not None:
-            self.sigma_low = np.asarray(self.sigma_low, dtype=float)
-        if self.sigma_high is not None:
-            self.sigma_high = np.asarray(self.sigma_high, dtype=float)
-        if self.sigma_cov is not None:
-            self.sigma_cov = np.asarray(self.sigma_cov, dtype=float)
-
         if self.x.ndim != 1 or self.y.ndim != 1:
             raise ValueError("DataSeries x and y must be one-dimensional arrays")
         if self.x.size != self.y.size:
@@ -72,48 +167,52 @@ class DataSeries:
             raise ValueError("DataSeries x and y must contain only finite values")
 
         n = self.x.size
-        if self.sigma_cov is not None:
-            if self.sigma_cov.ndim != 2 or self.sigma_cov.shape != (n, n):
-                raise ValueError("sigma_cov must be a square covariance matrix matching x/y length")
-            if not np.all(np.isfinite(self.sigma_cov)):
-                raise ValueError("sigma_cov must contain only finite values")
+        if self.y_err is not None:
+            _normalize_uncertainties(n, sigma=self.y_err)
+        if self.sigma is not None and self.y_err is not None:
+            _normalize_uncertainties(n, sigma=self.sigma)
+            if isinstance(self.sigma, AsymmetricError) and isinstance(self.y_err, AsymmetricError):
+                same = np.allclose(self.sigma.lower, self.y_err.lower, rtol=1e-12, atol=0.0) and np.allclose(
+                    self.sigma.upper, self.y_err.upper, rtol=1e-12, atol=0.0
+                )
+            elif not isinstance(self.sigma, AsymmetricError) and not isinstance(self.y_err, AsymmetricError):
+                same = np.allclose(self.sigma, self.y_err, rtol=1e-12, atol=0.0)
+            else:
+                same = False
+            if not same:
+                raise ValueError("sigma and y_err must describe the same uncertainties")
+        elif self.sigma is None:
+            self.sigma = self.y_err
 
-        def _validate_error_array(name: str, value, *, allow_asymmetric: bool = False):
-            if value is None:
-                return
-            if isinstance(value, AsymmetricError):
-                lower = np.asarray(value.lower, dtype=float)
-                upper = np.asarray(value.upper, dtype=float)
-                if lower.shape != upper.shape:
-                    raise ValueError(f"{name} lower and upper arrays must have the same shape")
-                if lower.ndim > 0 and lower.size != n:
-                    raise ValueError(f"{name} arrays must have the same length as x and y")
-                if not (np.all(np.isfinite(lower)) and np.all(np.isfinite(upper))):
-                    raise ValueError(f"{name} arrays must contain only finite values")
-                return
-            arr = np.asarray(value, dtype=float)
-            if arr.ndim > 0 and arr.size != n:
-                raise ValueError(f"{name} must have the same length as x and y")
-            if not np.all(np.isfinite(arr)):
-                raise ValueError(f"{name} must contain only finite values")
-            if np.any(arr < 0):
-                raise ValueError(f"{name} must be non-negative")
+        _, self.sigma_cov = _normalize_uncertainties(
+            n,
+            sigma=self.sigma,
+            sigma_low=self.sigma_low,
+            sigma_high=self.sigma_high,
+            sigma_cov=self.sigma_cov,
+        )
+        if self.sigma is not None and not isinstance(self.sigma, AsymmetricError):
+            self.sigma = np.asarray(self.sigma, dtype=float)
+        self.y_err = self.sigma
+        if self.sigma_low is not None:
+            self.sigma_low = np.asarray(self.sigma_low, dtype=float)
+            self.sigma_high = np.asarray(self.sigma_high, dtype=float)
 
-        _validate_error_array("sigma", self.sigma, allow_asymmetric=True)
-        _validate_error_array("sigma_low", self.sigma_low)
-        _validate_error_array("sigma_high", self.sigma_high)
+    @property
+    def uncertainties_inferred(self) -> bool:
+        """Whether this series carries a loader's heuristic measurement errors."""
+        return self.uncertainty_inference is not None
 
     @property
     def effective_sigma(self) -> np.ndarray | None:
-        if self.sigma_cov is not None:
-            return None
-        if self.sigma_low is not None and self.sigma_high is not None:
-            return np.sqrt((self.sigma_low**2 + self.sigma_high**2) / 2.0)
-        if isinstance(self.sigma, AsymmetricError):
-            return self.sigma.effective
-        if self.sigma is None:
-            return None
-        return np.asarray(self.sigma, dtype=float)
+        sigma, _ = _normalize_uncertainties(
+            self.x.size,
+            sigma=self.sigma,
+            sigma_low=self.sigma_low,
+            sigma_high=self.sigma_high,
+            sigma_cov=self.sigma_cov,
+        )
+        return sigma
 
     @property
     def y_error(self) -> np.ndarray | None:
@@ -131,6 +230,7 @@ class DataSeries:
             sigma_low=self.sigma_low,
             sigma_high=self.sigma_high,
             sigma_cov=self.sigma_cov,
+            uncertainty_inference=self.uncertainty_inference,
         )
 
 
@@ -183,7 +283,7 @@ class FitResult:
     sigma: np.ndarray | None = None
     y_fit: np.ndarray | None = None
     series: DataSeries | None = None
-    model: Any = None
+    model: ModelFunction | None = None
     is_weighted: bool = True
     absolute_sigma: bool = False
     identifiable: bool = True
@@ -218,6 +318,8 @@ class FitResult:
         """Human-readable summary of the fit result."""
         model = self.model_name or "custom"
         lines = [f"FitResult: {model}"]
+        if self.series is not None and self.series.uncertainties_inferred:
+            lines.append(f"  measurement errors inferred: {self.series.uncertainty_inference}")
 
         names = self.param_names or list(self.params.keys())
         if names:
@@ -303,33 +405,33 @@ class FitResult:
             raise ValueError("FitResult does not contain raw data")
         return self.y - self.predict(self.x)
 
-    def items(self):
+    def items(self) -> ItemsView[str, float]:
         return self.params.items()
 
-    def keys(self):
+    def keys(self) -> KeysView[str]:
         return self.params.keys()
 
-    def values(self):
+    def values(self) -> ValuesView[float]:
         return self.params.values()
 
 
 @dataclass
 class Fitter:
-    model: str | Any = "linear"
-    p0: Any = None
-    bounds: Any = None
+    model: ModelSpec = "linear"
+    p0: InitialGuess = None
+    bounds: Bounds = None
 
-    def fit(self, x, y=None, **kwargs) -> FitResult:
+    def fit(self, x: FitInput, y: MaybeArray | None = None, **kwargs: Any) -> FitResult:
         from .fitter_impl import fit as _fit
 
         return _fit(x, y, model=self.model, p0=self.p0, bounds=self.bounds, **kwargs)
 
-    def fit_multi(self, dataset, **kwargs):
+    def fit_multi(self, dataset: Iterable[DataSeries] | Dataset, **kwargs: Any) -> list[FitResult]:
         from .fitter_impl import fit_multi as _fit_multi
 
         return _fit_multi(dataset, model=self.model, p0=self.p0, bounds=self.bounds, **kwargs)
 
-    def __call__(self, x, y=None, **kwargs) -> FitResult:
+    def __call__(self, x: FitInput, y: MaybeArray | None = None, **kwargs: Any) -> FitResult:
         return self.fit(x, y, **kwargs)
 
 
@@ -339,21 +441,23 @@ class Plotter:
     figure: Any = None
     axes: Any = None
 
-    def add_series(self, *args, **kwargs) -> Plotter:
+    def add_series(self, *args: DataSeries | MaybeArray, **kwargs: Any) -> Plotter:
         if len(args) == 1 and isinstance(args[0], DataSeries):
             self.series.append(args[0])
             return self
         if len(args) >= 2:
-            self.series.append(DataSeries(*args[:2], **kwargs))
+            self.series.append(
+                DataSeries(np.asarray(args[0], dtype=float), np.asarray(args[1], dtype=float), **kwargs)
+            )
             return self
         raise TypeError("add_series expects a DataSeries or x, y arrays")
 
-    def plot(self, result=None, **kwargs) -> Plotter:
+    def plot(self, result: ResultInput = None, **kwargs: Any) -> Plotter:
         from .plot import plot_result as _plot_result
 
         return _plot_result(result=result, plotter=self, **kwargs)
 
-    def save(self, path, **kwargs):
+    def save(self, path: str | Path, **kwargs: Any) -> Path:
         if self.figure is None:
             raise ValueError("Nothing has been plotted yet")
         path = Path(path)
@@ -361,9 +465,13 @@ class Plotter:
         self.figure.savefig(str(path), **kwargs)
         return path
 
-    def __call__(self, result=None, **kwargs) -> Plotter:
+    def __call__(self, result: ResultInput = None, **kwargs: Any) -> Plotter:
         return self.plot(result=result, **kwargs)
 
+
+FitInput = MaybeArray | DataSeries | str | Path
+ResultInput = FitResult | list[FitResult] | tuple[FitResult, ...] | None
+SeriesInput = DataSeries | list[DataSeries] | tuple[DataSeries, ...] | None
 
 __all__ = [
     "AsymmetricError",

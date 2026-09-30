@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from numbers import Real
+from typing import Any, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 from scipy.stats import norm
 
-from .types import AsymmetricError, DataSeries, FitResult, MaybeArray, Plotter
+from .types import AsymmetricError, DataSeries, FitResult, MaybeArray, Plotter, ResultInput, SeriesInput
 
 # ── Colour-blind friendly palette (Okabe-Ito) ──────────────────────
 _OKABE_ITO = [
@@ -64,7 +67,7 @@ _PUBLICATION_RC = {
 _style_applied = False
 
 
-def use_publication_style():
+def use_publication_style() -> None:
     """Apply matplotlib rcParams suitable for journal-quality figures.
 
     Uses a sans-serif font family (DejaVu Sans, built into matplotlib)
@@ -78,7 +81,7 @@ def use_publication_style():
     _style_applied = True
 
 
-def _as_results(result):
+def _as_results(result: ResultInput) -> list[FitResult]:
     if result is None:
         return []
     if isinstance(result, FitResult):
@@ -88,7 +91,7 @@ def _as_results(result):
     raise TypeError("result must be a FitResult or a sequence of FitResult objects")
 
 
-def _as_series(data_series):
+def _as_series(data_series: SeriesInput) -> list[DataSeries] | None:
     if data_series is None:
         return None
     if isinstance(data_series, DataSeries):
@@ -116,7 +119,7 @@ def _residuals(result: FitResult) -> np.ndarray | None:
     return result.y - result.predict(result.x)
 
 
-def _plot_series(ax, series: DataSeries, index: int):
+def _plot_series(ax: Axes, series: DataSeries, index: int) -> str:
     """Plot data series with error bars and caps using Okabe-Ito colours."""
     if series.sigma_cov is not None:
         yerr = np.sqrt(np.diag(series.sigma_cov))
@@ -130,7 +133,7 @@ def _plot_series(ax, series: DataSeries, index: int):
     color = _OKABE_ITO[index % len(_OKABE_ITO)]
     if yerr is None:
         (line,) = ax.plot(series.x, series.y, "o", ms=4.0, color=color, zorder=2, label=label)
-        return line.get_color()
+        return color
     container = ax.errorbar(
         series.x,
         series.y,
@@ -150,10 +153,10 @@ def _plot_series(ax, series: DataSeries, index: int):
         barlinecol = container.lines[2]
         if hasattr(barlinecol, "set_zorder"):
             barlinecol.set_zorder(2)
-    return container.lines[0].get_color()
+    return color
 
 
-def _plot_fit_line(ax, result: FitResult, index: int):
+def _plot_fit_line(ax: Axes, result: FitResult, index: int) -> str | None:
     if result.x is None or result.y is None:
         return None
     # Use a visibly darker line — offset palette by 1 so the fit line
@@ -161,7 +164,7 @@ def _plot_fit_line(ax, result: FitResult, index: int):
     color = _OKABE_ITO[(index + 1) % len(_OKABE_ITO)]
     xs = np.linspace(float(np.min(result.x)), float(np.max(result.x)), 400)
     (line,) = ax.plot(xs, result.predict(xs), color=color, lw=2.5, zorder=3, label=_fit_label(result, index))
-    return line.get_color()
+    return color
 
 
 _PredictionSigma = MaybeArray | Callable[[np.ndarray], MaybeArray] | None
@@ -230,6 +233,7 @@ def _confidence_band(
     covariance. Prediction bands add variance of future observations independent
     of the fitted data, in squared y units. Explicit prediction_sigma values
     describe absolute future errors; see plot_fit for default noise policies.
+    Model perturbations are evaluated across the complete prediction grid.
     Returns ``(lower, upper)`` arrays, or ``None`` if covariance is unavailable.
     """
     ci_level = _validate_ci_level(ci_level)
@@ -245,21 +249,20 @@ def _confidence_band(
     n_params = len(p0)
 
     ys = np.asarray(result.predict(xs), dtype=float)
-    sigma_fit = np.zeros_like(ys)
+    gradients = np.empty((xs.size, n_params), dtype=float)
 
     eps = 1e-8
-    for i, xv in enumerate(xs):
-        grad = np.zeros(n_params, dtype=float)
-        for j in range(n_params):
-            step = max(abs(p0[j]) * eps, eps)
-            up = p0.copy()
-            up[j] += step
-            down = p0.copy()
-            down[j] -= step
-            grad[j] = (
-                float(result.model(np.array([xv]), *up)[0]) - float(result.model(np.array([xv]), *down)[0])
-            ) / (2.0 * step)
-        sigma_fit[i] = float(np.sqrt(max(grad @ cov @ grad, 0.0)))
+    for j in range(n_params):
+        step = max(abs(p0[j]) * eps, eps)
+        up = p0.copy()
+        up[j] += step
+        down = p0.copy()
+        down[j] -= step
+        gradients[:, j] = (
+            np.asarray(result.model(xs, *up), dtype=float) - np.asarray(result.model(xs, *down), dtype=float)
+        ) / (2.0 * step)
+    variance = np.einsum("ij,jk,ik->i", gradients, cov, gradients)
+    sigma_fit = np.sqrt(np.maximum(variance, 0.0))
 
     if prediction:
         sigma_fit = np.sqrt(sigma_fit**2 + _prediction_variance(result, xs, prediction_sigma))
@@ -268,7 +271,14 @@ def _confidence_band(
     return ys - z * sigma_fit, ys + z * sigma_fit
 
 
-def _plot_ci_band(ax, xs: np.ndarray, band, color: str, ci_level: float, prediction: bool):
+def _plot_ci_band(
+    ax: Axes,
+    xs: np.ndarray,
+    band: tuple[np.ndarray, np.ndarray] | None,
+    color: str,
+    ci_level: float,
+    prediction: bool,
+) -> None:
     if band is None:
         return
     lower, upper = band
@@ -276,18 +286,21 @@ def _plot_ci_band(ax, xs: np.ndarray, band, color: str, ci_level: float, predict
     ax.fill_between(xs, lower, upper, color=color, alpha=0.18, zorder=2, label=label)
 
 
-def _plot_residual_axis(axr, result: FitResult, color: str | None = None):
+def _plot_residual_axis(axr: Axes, result: FitResult, color: str | None = None) -> None:
     residuals = _residuals(result)
     if residuals is None:
         return
     if color is None:
         color = _OKABE_ITO[1]
     axr.axhline(0.0, color="0.35", lw=1.0, ls="--")
+    assert result.x is not None
     axr.plot(result.x, residuals, marker="o", ls="none", ms=3.5, color=color)
     axr.set_ylabel("residuals")
 
 
-def _style_axes(ax, axr=None, *, xlabel="x", ylabel="y", title=None):
+def _style_axes(
+    ax: Axes, axr: Axes | None = None, *, xlabel: str = "x", ylabel: str = "y", title: str | None = None
+) -> None:
     ax.set_ylabel(ylabel)
     if title:
         ax.set_title(title)
@@ -298,7 +311,9 @@ def _style_axes(ax, axr=None, *, xlabel="x", ylabel="y", title=None):
         ax.set_xlabel(xlabel)
 
 
-def _create_single_figure(*, show_residuals: bool, figsize):
+def _create_single_figure(
+    *, show_residuals: bool, figsize: tuple[float, float]
+) -> tuple[Figure, Axes, Axes | None]:
     if show_residuals:
         fig, (ax, axr) = plt.subplots(
             2,
@@ -312,8 +327,10 @@ def _create_single_figure(*, show_residuals: bool, figsize):
     return fig, ax, None
 
 
-def _single_axes_from_existing(ax, *, show_residuals: bool, figsize):
-    fig = ax.figure
+def _single_axes_from_existing(
+    ax: Axes, *, show_residuals: bool, figsize: tuple[float, float]
+) -> tuple[Figure, Axes, Axes | None]:
+    fig = cast(Figure, ax.figure)
     if not show_residuals:
         return fig, ax, None
     try:
@@ -332,8 +349,8 @@ def _single_axes_from_existing(ax, *, show_residuals: bool, figsize):
 def _plot_single_fit(
     result: FitResult,
     *,
-    data_series=None,
-    ax=None,
+    data_series: SeriesInput = None,
+    ax: Axes | None = None,
     show_residuals: bool = True,
     show_ci: bool = False,
     ci_level: float = 0.68,
@@ -342,7 +359,7 @@ def _plot_single_fit(
     title: str | None = None,
     xlabel: str = "x",
     ylabel: str = "y",
-    figsize=(7, 4),
+    figsize: tuple[float, float] = (7, 4),
     plotter: Plotter | None = None,
 ) -> Plotter:
     series = data_series
@@ -390,7 +407,7 @@ def _plot_single_fit(
     return plotter
 
 
-def _multi_layout(count: int, layout: str):
+def _multi_layout(count: int, layout: str) -> tuple[int, int]:
     layout = (layout or "grid").lower()
     if layout != "grid":
         raise ValueError("layout must be 'grid'")
@@ -398,11 +415,11 @@ def _multi_layout(count: int, layout: str):
 
 
 def plot_multi_fit(
-    results,
-    series_list,
+    results: ResultInput,
+    series_list: SeriesInput,
     layout: str = "grid",
     *,
-    figsize=(5.0, 4.0),
+    figsize: tuple[float, float] = (5.0, 4.0),
     title: str | None = None,
     xlabel: str = "x",
     ylabel: str = "y",
@@ -476,7 +493,9 @@ def plot_multi_fit(
     return plotter
 
 
-def _overlay_on_axes(ax, axr, result: FitResult, series: DataSeries | None, index: int):
+def _overlay_on_axes(
+    ax: Axes, axr: Axes | None, result: FitResult, series: DataSeries | None, index: int
+) -> None:
     color = None
     if series is not None:
         color = _plot_series(ax, series, index)
@@ -487,7 +506,7 @@ def _overlay_on_axes(ax, axr, result: FitResult, series: DataSeries | None, inde
         _plot_residual_axis(axr, result, fit_color)
 
 
-def _add_result_axes(ax, result: FitResult, show_residuals: bool = False):
+def _add_result_axes(ax: Axes, result: FitResult, show_residuals: bool = False) -> Axes:
     series = result.series
     color = None
     if series is not None:
@@ -504,15 +523,15 @@ def _add_result_axes(ax, result: FitResult, show_residuals: bool = False):
 
 
 def plot_result(
-    result=None,
+    result: ResultInput = None,
     *,
     plotter: Plotter | None = None,
     show_residuals: bool = False,
     title: str | None = None,
     xlabel: str = "x",
     ylabel: str = "y",
-    figsize=(7, 4),
-    **kwargs,
+    figsize: tuple[float, float] = (7, 4),
+    **kwargs: Any,
 ) -> Plotter:
     """Plot fit results or raw data series on a single set of axes.
 
@@ -592,16 +611,16 @@ def plot_result(
 
 
 def plot_fit(
-    result=None,
+    result: ResultInput = None,
     *,
-    data_series=None,
-    ax=None,
+    data_series: SeriesInput = None,
+    ax: Axes | None = None,
     show_residuals: bool = True,
     show_ci: bool = False,
     ci_level: float = 0.68,
     prediction: bool = False,
     prediction_sigma: _PredictionSigma = None,
-    **kwargs,
+    **kwargs: Any,
 ) -> Plotter:
     """Plot a single fit result with its data and residuals.
 
@@ -669,7 +688,9 @@ def plot_fit(
     )
 
 
-def plot_residuals(result=None, *, data_series=None, ax=None, **kwargs) -> Plotter:
+def plot_residuals(
+    result: ResultInput = None, *, data_series: SeriesInput = None, ax: Axes | None = None, **kwargs: Any
+) -> Plotter:
     """Plot a fit emphasising the residuals.
 
     Equivalent to ``plot_fit(…, show_residuals=True)``.

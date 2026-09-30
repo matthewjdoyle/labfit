@@ -84,6 +84,48 @@ the default estimates a common variance from the residuals instead.
 ``result.absolute_sigma`` records the policy used. Goodness-of-fit statistics
 are calculated separately and are not changed by this option.
 
+Valid uncertainty specifications
+--------------------------------
+
+LabFit validates measurement errors when constructing a ``DataSeries`` and
+again when fitting, including explicit overrides. Supply one specification:
+
+- ``sigma`` (or the ``DataSeries.y_err`` alias): a finite, strictly positive
+  scalar or one-dimensional array matching the data length.
+- ``sigma_low`` and ``sigma_high`` together, or an ``AsymmetricError`` supplied
+  as ``sigma``: both sides must be finite and strictly positive. Scalars are
+  supported; ``AsymmetricError`` requires matching lower/upper shapes.
+  Fitting uses the root-mean-square error and plotting retains both sides.
+- ``sigma_cov``: a finite symmetric positive-definite matrix of shape
+  ``(N, N)``. LabFit checks symmetry with relative tolerance ``1e-12`` and
+  symmetrizes accepted rounding differences. Singular, indefinite and
+  asymmetric matrices raise ``ValueError`` before optimization.
+- ``weights`` (fitting only): a finite nonnegative scalar or matching 1D array
+  of inverse variances. A zero weight explicitly excludes that sample from
+  model evaluation, initial guesses, stored result data, default plots and all
+  statistics. At least one weight must be positive. Degrees of freedom use the
+  number of retained samples, so excluded points cannot inflate confidence.
+
+Competing specifications and incomplete asymmetric pairs raise ``ValueError``.
+``sigma`` and ``y_err`` may both be supplied only if they describe the same
+errors, including both asymmetric sides. Zero sigmas are rejected: use zero
+weights to exclude observations instead of assigning them zero uncertainty.
+
+Any explicit fitting error specification replaces the entire stored error
+specification of a ``DataSeries`` or loaded CSV. Supplying just one asymmetric
+side does not borrow the other side from the input. The input series is left
+unchanged; ``result.series`` carries the errors actually used in the fit.
+
+.. code-block:: python
+
+   import numpy as np
+   from labfit import DataSeries, fit
+
+   series = DataSeries([0, 1, 2, 3], [1, 3, 100, 7], sigma=0.5)
+   result = fit(series, weights=[4, 4, 0, 4], absolute_sigma=True)
+   assert result.dof == 1  # three retained observations minus two parameters
+   np.testing.assert_array_equal(result.x, [0, 1, 3])
+
 Confidence and prediction bands
 -------------------------------
 

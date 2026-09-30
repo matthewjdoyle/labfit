@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.0] - Unreleased
 
 ### Breaking
+- File error inference now emits UncertaintyInferenceWarning. Poisson inference
+  requires nonnegative integer counts and uses sqrt(max(y, 1)); it no longer
+  clips negative data. Fractional inference rejects zero y-values with guidance
+  to supply errors or load unweighted. Invalid error modes are always rejected.
+- Uncertainty specifications are now mutually exclusive and validated before
+  fitting, including overrides. Standard deviations must be finite, strictly
+  positive scalars or matching 1D arrays; asymmetric pairs must be complete;
+  covariance must be symmetric positive-definite. Invalid inputs raise ValueError.
+  CSV/TXT files combining symmetric and asymmetric errors are rejected.
+- Explicit fitting errors replace the entire stored error specification.
+  Zero weights exclude samples from the fit, stored result data, default plots
+  and statistics; negative/nonfinite weights and all-zero weights are rejected.
 - Prediction bands for heterogeneous or correlated training errors now require
   `prediction_sigma` to define future observation noise. Invalid confidence
   levels raise ValueError instead of producing invalid band endpoints.
@@ -32,6 +44,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (or tests) that need a non-interactive backend should set it themselves.
 
 ### Added
+- Inline types for fitting, loading, plotting, built-in models, uncertainty
+  utilities and container methods, plus a PEP 561 `py.typed` marker in package
+  distributions for downstream type checkers. Decorated models preserve named
+  parameter types and array-like inputs.
+- CSV/TXT error_mode="unweighted" loads x/y without error columns or inference.
+- DataSeries.uncertainties_inferred and uncertainty_inference record heuristic
+  errors and their formula/settings. Relabeling and fitting preserve provenance;
+  fit summaries identify inferred errors and explicit overrides clear provenance.
 - `plot_fit(..., prediction_sigma=...)` accepts absolute future standard
   deviations in y units as a scalar, plotted-grid array, or function of x.
 - `FitResult.dof` preserves N minus the number of parameters, including zero
@@ -50,6 +70,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `double_exponential`, `moffat`, `gaussian_baseline`, `bimodal_gaussian`.
 
 ### Changed
+- Mypy now checks untyped function bodies and rejects incomplete function
+  annotations throughout the package. Added positive/negative consumer typing
+  regressions and aligned the contributor policy with enforced settings.
+- Correlated fits use lower-triangular solves on Cholesky factors for residuals
+  and chi-square. Confidence/prediction bands evaluate each parameter perturbation
+  across the whole grid and compute variances in one array operation, reducing
+  model calls from 2 * parameters * grid_points + 1 to 2 * parameters + 1.
+- Added numerical-equivalence and before/after benchmarks for whitening, full
+  correlated linear/Gaussian fits, and confidence/prediction-band calculations.
 - Unweighted fits warn that chi-square statistics are unavailable, and summaries
   show residual variance without measurement-error advice.
 - `Dataset` uses the generated `@dataclass` `__init__` instead of a manual
@@ -60,6 +89,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Consolidated `mypy`, `ruff`, and `coverage` configuration into `pyproject.toml`.
 
 ### Fixed
+- Files with zero counts now load with positive finite counting-error estimates
+  using a stated one-count variance floor. Validate the inferred fractional scale
+  and reject overflow/underflow. Explicit fit errors bypass unused file errors
+  and inference, avoiding spurious warnings or failures from an unused heuristic.
+- Centralized uncertainty validation for DataSeries, AsymmetricError, fitting
+  and effective_sigma. Prevent negative weights from silently discarding data
+  and producing chi-square zero; count only positive-weight samples in degrees
+  of freedom. Preserve fitted error overrides in result.series for plotting.
+  Avoid inferred symmetric errors for files with asymmetric columns, and use
+  an overflow-resistant RMS calculation for asymmetric errors.
 - Prediction bands now add observation variance in squared y units, using
   constant training errors and the covariance policy or unweighted SSR / dof.
   Explicit future errors are never scaled by reduced chi-square. Validate

@@ -20,7 +20,7 @@ extra installs Sphinx and the Read the Docs theme.
 
 ## Running the checks
 
-Before opening a pull request, make sure all three pass:
+Before opening a pull request, make sure all checks pass:
 
 ```bash
 pytest -q --cov=labfit --cov-report=term-missing
@@ -38,7 +38,18 @@ These are the same commands the CI workflow runs. Coverage must stay at or above
 - Code is formatted with `ruff format`. Run `ruff format .` to fix formatting.
 - Lint rules (`E`, `F`, `W`, `I`, `UP`, `B`, `SIM`) are selected in
   `pyproject.toml`.
-- Type annotations are required on all public functions (`disallow_untyped_defs`).
+- Fully annotate function arguments and returns, including private helpers and
+  nested functions. `mypy labfit` enforces `disallow_untyped_defs`; keep
+  `check_untyped_defs` enabled so bodies are also checked during migrations.
+- Use concrete types for public API inputs and outputs. Reserve `Any` for dynamic
+  keyword forwarding (such as Matplotlib options), and preserve decorated model
+  parameter names and types. Dataclass constructors accept array-like inputs;
+  their stored data/error fields are normalized NumPy arrays.
+- The package ships `labfit/py.typed` (PEP 561) so installed-package consumers can
+  use inline annotations. Keep the marker in setuptools package data.
+  `tests/test_typing_contract.py` checks supported calls, inferred return types,
+  invalid model arguments, and rejection of untyped definitions with mypy.
+  Extend its consumer fixture in `tests/typing/consumer_valid.py` for API additions.
 - Do not add comments unless they explain non-obvious logic.
 - Follow the existing NumPy-style docstrings (parsed by Sphinx Napoleon).
 

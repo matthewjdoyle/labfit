@@ -27,11 +27,25 @@ print(f"χ²/ν = {result.reduced_chi2:.3f}")
 
 Three lines: CSV → fit → plot → goodness-of-fit.
 
+Supply measurement errors in a `sigma` column when available. Files without
+error columns infer heuristic errors, emit `UncertaintyInferenceWarning`, and
+record the formula on `result.series.uncertainty_inference`. Counting data use
+`sqrt(max(y, 1))`, including a stated variance floor for zero counts. To load
+without errors or inference:
+
+```python
+from labfit.io import load_csv
+
+result = fit(load_csv("data.csv", error_mode="unweighted"))
+```
+
+Unweighted fits report `residual_variance`; chi-square statistics are unavailable.
+
 ## Features
 
 - **Built-in models** - linear, quadratic, Gaussian, Lorentzian, exponential, power law,
   logistic, sinc, bimodal Gaussian, damped oscillator, and more - all by name.
-- **Reduced χ²** on every fit result, so you can immediately assess goodness-of-fit.
+- **Fit diagnostics** - reduced χ² with supplied errors, residual variance for unweighted fits.
 - **Asymmetric & correlated errors** - handle `sigma_low`/`sigma_high` and full
   covariance matrices without rewriting propagation code.
 - **Multi-series fitting** - fit and compare many data sets on shared or independent axes.

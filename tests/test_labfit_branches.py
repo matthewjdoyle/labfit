@@ -288,13 +288,13 @@ def test_types_utils_and_dataset_helpers(tmp_path: Path):
     assert list(result.values()) == [2.0, 1.0]
 
     csv = tmp_path / "data.csv"
-    csv.write_text("x,y,sigma,sigma_low,sigma_high\n0,1,0.1,0.2,0.3\n1,2,0.2,0.3,0.4\n")
+    csv.write_text("x,y,sigma_low,sigma_high\n0,1,0.2,0.3\n1,2,0.3,0.4\n")
     loaded = _load_csv(csv)
     assert len(loaded.x) == 2 and len(loaded.y) == 2
     series2 = _coerce_series_input(csv)
     assert np.allclose(series2.x, loaded.x)
     assert np.allclose(series2.y, loaded.y)
-    assert np.allclose(series2.sigma, loaded.sigma)
+    assert series2.sigma is loaded.sigma is None
     assert np.allclose(series2.sigma_low, loaded.sigma_low)
     assert np.allclose(series2.sigma_high, loaded.sigma_high)
 

@@ -1,13 +1,18 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 import numpy as np
 
-from .types import AsymmetricError
+from .types import AsymmetricError, MaybeArray, _normalize_uncertainties
 
 
-def propagate_errors(func: Callable, jacobian=None, covariance=None, **params):
+def propagate_errors(
+    func: Callable[..., float],
+    jacobian: Callable[..., MaybeArray] | None = None,
+    covariance: np.ndarray | Sequence[Sequence[float]] | None = None,
+    **params: float,
+) -> tuple[float, float]:
     """Propagate parameter uncertainties through a function.
 
     Given a function ``func`` and its parameters with associated
@@ -84,10 +89,12 @@ def propagate_errors(func: Callable, jacobian=None, covariance=None, **params):
     return y, float(np.sqrt(max(variance, 0.0)))
 
 
-def _numerical_jacobian(func, value_kwargs, eps=1e-8):
+def _numerical_jacobian(
+    func: Callable[..., float], value_kwargs: dict[str, float], eps: float = 1e-8
+) -> Callable[..., np.ndarray]:
     """Build a central-difference Jacobian callable for *func*."""
 
-    def jacobian(**kwargs):
+    def jacobian(**kwargs: float) -> np.ndarray:
         names = list(value_kwargs.keys())
         base = np.array([float(value_kwargs[n]) for n in names], dtype=float)
         grad = np.zeros(len(names), dtype=float)
@@ -105,18 +112,24 @@ def _numerical_jacobian(func, value_kwargs, eps=1e-8):
     return jacobian
 
 
-def effective_sigma(sigma=None, sigma_low=None, sigma_high=None, sigma_cov=None):
-    if sigma_cov is not None:
-        return None
-    if sigma_low is not None and sigma_high is not None:
-        return np.sqrt(
-            (np.asarray(sigma_low, dtype=float) ** 2 + np.asarray(sigma_high, dtype=float) ** 2) / 2.0
-        )
-    if isinstance(sigma, AsymmetricError):
-        return sigma.effective
-    if sigma is None:
-        return None
-    return np.asarray(sigma, dtype=float)
+def effective_sigma(
+    sigma: MaybeArray | AsymmetricError | None = None,
+    sigma_low: MaybeArray | None = None,
+    sigma_high: MaybeArray | None = None,
+    sigma_cov: np.ndarray | Sequence[Sequence[float]] | None = None,
+) -> np.ndarray | None:
+    """Validate one uncertainty specification and return its effective sigma.
+
+    Standard deviations must be finite, strictly positive scalars or 1D arrays.
+    Asymmetric pairs use their root-mean-square standard deviation. Covariance
+    must be symmetric positive-definite and returns None (correlations cannot
+    be represented by independent sigmas). Competing specifications are rejected.
+    DataSeries and fitting additionally validate the errors against data length.
+    """
+    effective, _ = _normalize_uncertainties(
+        sigma=sigma, sigma_low=sigma_low, sigma_high=sigma_high, sigma_cov=sigma_cov
+    )
+    return effective
 
 
 __all__ = ["propagate_errors", "effective_sigma"]
