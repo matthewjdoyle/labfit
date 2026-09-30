@@ -3,3 +3,4 @@ sphinx-rtd-theme>=2.0
 numpy>=1.26
 scipy>=1.11
 matplotlib>=3.8
+tomli>=2.0; python_version < '3.11'

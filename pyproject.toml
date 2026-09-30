@@ -38,6 +38,7 @@ dev = [
 docs = [
     "sphinx>=7.2,<8",
     "sphinx-rtd-theme>=2.0",
+    "tomli>=2.0; python_version < '3.11'",
 ]
 
 [project.urls]

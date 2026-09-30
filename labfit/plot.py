@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.stats import norm
 
-from .types import DataSeries, FitResult, Plotter
+from .types import AsymmetricError, DataSeries, FitResult, Plotter
 
 # ── Colour-blind friendly palette (Okabe-Ito) ──────────────────────
 _OKABE_ITO = [
@@ -80,7 +80,7 @@ def _as_results(result):
         return []
     if isinstance(result, FitResult):
         return [result]
-    if isinstance(result, (list, tuple)) and all(isinstance(item, FitResult) for item in result):
+    if isinstance(result, list | tuple) and all(isinstance(item, FitResult) for item in result):
         return list(result)
     raise TypeError("result must be a FitResult or a sequence of FitResult objects")
 
@@ -90,7 +90,7 @@ def _as_series(data_series):
         return None
     if isinstance(data_series, DataSeries):
         return [data_series]
-    if isinstance(data_series, (list, tuple)) and all(isinstance(item, DataSeries) for item in data_series):
+    if isinstance(data_series, list | tuple) and all(isinstance(item, DataSeries) for item in data_series):
         return list(data_series)
     raise TypeError("data_series must be a DataSeries or a sequence of DataSeries objects")
 
@@ -115,7 +115,14 @@ def _residuals(result: FitResult) -> np.ndarray | None:
 
 def _plot_series(ax, series: DataSeries, index: int):
     """Plot data series with error bars and caps using Okabe-Ito colours."""
-    yerr = series.effective_sigma
+    if series.sigma_cov is not None:
+        yerr = np.sqrt(np.diag(series.sigma_cov))
+    elif series.sigma_low is not None and series.sigma_high is not None:
+        yerr = np.stack(np.broadcast_arrays(series.sigma_low, series.sigma_high, series.y)[:2])
+    elif isinstance(series.sigma, AsymmetricError):
+        yerr = np.stack(np.broadcast_arrays(series.sigma.lower, series.sigma.upper, series.y)[:2])
+    else:
+        yerr = series.effective_sigma
     label = _series_label(series, index)
     color = _OKABE_ITO[index % len(_OKABE_ITO)]
     if yerr is None:
@@ -287,7 +294,7 @@ def _plot_single_fit(
         series = result.series
     if series is None:
         raise ValueError("plot_fit needs a DataSeries either via data_series or result.series")
-    if isinstance(series, (list, tuple)):
+    if isinstance(series, list | tuple):
         if len(series) != 1:
             raise TypeError("plot_fit expects a single DataSeries")
         series = series[0]

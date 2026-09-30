@@ -12,6 +12,8 @@ Should I pass ``sigma_low`` and ``sigma_high``?
 -----------------------------------------------
 
 Yes, when the measurement errors are asymmetric. LabFit converts them to an effective standard deviation for fitting and preserves the original bounds for plotting.
+For correlated errors, plotted bars show the marginal standard deviations
+``sqrt(diag(sigma_cov))``; the bars do not visualize correlations between points.
 
 Why is reduced χ² not near 1?
 ------------------------------

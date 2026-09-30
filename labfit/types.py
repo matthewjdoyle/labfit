@@ -175,6 +175,7 @@ class FitResult:
     series: DataSeries | None = None
     model: Any = None
     is_weighted: bool = True
+    absolute_sigma: bool = False
 
     def __post_init__(self) -> None:
         if self.covariance is not None:

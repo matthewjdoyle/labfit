@@ -1,11 +1,17 @@
 import sys
 from pathlib import Path
 
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
+
 # Make the project root importable during docs build.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 project = "LabFit"
-version = "0.1.0"
+with (Path(__file__).resolve().parents[1] / "pyproject.toml").open("rb") as metadata_file:
+    version = tomllib.load(metadata_file)["project"]["version"]
 release = version
 author = "matt@matthewd0yle.com"
 copyright = "2026, " + author

@@ -6,8 +6,8 @@ from collections import OrderedDict
 from collections.abc import Callable
 
 import numpy as np
-from scipy.special import erfc, voigt_profile
-from scipy.stats import skewnorm
+from scipy.special import voigt_profile
+from scipy.stats import exponnorm, skewnorm
 
 
 def _as_x(func):
@@ -254,15 +254,12 @@ def exgaussian(x, amplitude, mu, sigma, tau):
     of a normal distribution with an exponential decay. It produces a
     peak that rises symmetrically but decays with a long tail, matching
     the characteristic shape of chromatographic signals, reaction-time
-    data, and detector pulses.
+    data, and detector pulses. ``amplitude`` is the integrated area;
+    ``sigma`` and ``tau`` must be positive.
     """
     sigma = np.asarray(sigma, dtype=float)
     tau = np.asarray(tau, dtype=float)
-    arg = (x - mu) / (np.sqrt(2.0) * sigma)
-    shift = sigma / (np.sqrt(2.0) * tau)
-    with np.errstate(over="ignore", invalid="ignore"):
-        exp_part = np.exp(-(x - mu) / tau + 0.5 * (sigma / tau) ** 2)
-        return amplitude * 0.5 * exp_part * erfc(arg - shift)
+    return amplitude * exponnorm.pdf(x, tau / sigma, loc=mu, scale=sigma)
 
 
 @_as_x

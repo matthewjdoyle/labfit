@@ -554,7 +554,7 @@ Variables
 ^^^^^^^^^
 
 - ``x``: input x-values.
-- ``A``: amplitude scale.
+- ``A``: integrated area under the peak.
 - ``\mu``: Gaussian center.
 - ``\sigma``: Gaussian width.
 - ``\tau``: exponential decay constant (tailing).

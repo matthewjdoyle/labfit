@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (or tests) that need a non-interactive backend should set it themselves.
 
 ### Added
+- `absolute_sigma` fitting option and result flag: use `True` for absolute
+  measurement uncertainties, or the compatible default `False` to estimate
+  a common noise scale from residuals. Applies to correlated errors and weights.
 - `LICENSE` file (MIT).
 - `CHANGELOG.md` and `CONTRIBUTING.md`.
 - `FitResult.is_weighted` flag indicating whether the fit used y-uncertainties.
@@ -49,6 +52,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Consolidated `mypy`, `ruff`, and `coverage` configuration into `pyproject.toml`.
 
 ### Fixed
+- Corrected the ExGaussian tail and normalization; amplitude now matches the
+  documented integrated-area convention. Previously fitted values may change.
+- Reject unknown initial-guess/bounds keys and incorrectly sized or shaped
+  initial guesses instead of silently ignoring or resizing them.
+- Preserve asymmetric error bars and show marginal errors for covariance inputs.
+- Corrected chi-square interpretation and half-life propagation documentation.
+- Read the documentation version from pyproject.toml.
 - `DataSeries` no longer maintains duplicate `sigma`/`y_err` sync logic.
 - `_model_wrapper` no longer resolves the model twice.
 - Singular covariance matrices now emit a `UserWarning` instead of silently

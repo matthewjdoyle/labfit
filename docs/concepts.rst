@@ -17,33 +17,74 @@ where :math:`M(x)` is the model prediction.
 Interpretation:
 
 - :math:`\chi^2_\nu \approx 1`  → consistent fit.
-- :math:`\chi^2_\nu > 1`   → scatter larger than expected → overestimate errors, weak model, neglected structure, or outliers.
-- :math:`\chi^2_\nu < 1`   → scatter smaller than expected → underestimated errors, overfitting, or data selection bias.
+- :math:`\chi^2_\nu > 1`   → scatter larger than expected → underestimated errors, weak model, neglected structure, or outliers.
+- :math:`\chi^2_\nu < 1`   → scatter smaller than expected → overestimated errors, overfitting, or data selection bias.
 
 LabFit reports ``reduced_chi2`` on every :class:`FitResult`. Plotting the **standardized residuals**
 helps diagnose which assumption failed.
 
-Correlated errors
------------------
+Absolute uncertainties and relative weights
+-------------------------------------------
 
-If your uncertainties share a common systematic, include a correlation matrix ``sigma_cov`` in :class:`Series`.
+Choose the covariance policy explicitly when calling ``fit``, ``fit_curve``,
+``fit_multi``, or the corresponding ``Fitter`` methods:
+
+- ``absolute_sigma=True`` treats supplied errors as calibrated measurement
+  uncertainties. Parameter covariance is not scaled by the residual scatter.
+- ``absolute_sigma=False`` (the default, preserving earlier behavior) uses the
+  errors only to set relative weights. The common noise scale is estimated from
+  the residuals, multiplying parameter covariance by reduced chi-square.
+
+For a locally identifiable model with a full-rank weighted residual Jacobian
+:math:`J` and positive degrees of freedom :math:`N-k`, the policies give
+
+.. math::
+
+   C_{\mathrm{absolute}} = (J^T J)^{-1}, \qquad
+   C_{\mathrm{relative}} = C_{\mathrm{absolute}}\,\frac{\chi^2}{N-k}.
+
+The parameter standard errors are the square roots of the diagonal entries.
+Multiplying every absolute sigma by 10 multiplies standard errors by 10;
+under the relative policy, a common sigma rescaling leaves standard errors
+unchanged. Neither policy changes the least-squares objective or best-fit
+parameters for a fixed error specification. These are local linear covariance
+estimates; bounds, nonlinear models, and unidentifiable parameters need care.
 
 .. code-block:: python
 
-   series = Series(x=x, y=y, sigma=sigma, sigma_cov=C)
+   from labfit import fit
+
+   result = fit(x, y, sigma=sigma, absolute_sigma=True)
+   # For correlated measurement errors:
+   correlated = fit(x, y, sigma_cov=C, absolute_sigma=True)
+
+The same policy applies to inverse-variance ``weights`` and the effective sigma
+used for asymmetric errors. With no error specification,
+``absolute_sigma=True`` assumes independent unit standard deviations in y units;
+the default estimates a common variance from the residuals instead.
+``result.absolute_sigma`` records the policy used. Goodness-of-fit statistics
+are calculated separately and are not changed by this option.
+
+Correlated errors
+-----------------
+
+If your uncertainties share a common systematic, include a covariance matrix ``sigma_cov`` in :class:`Series`.
+
+.. code-block:: python
+
+   series = Series(x=x, y=y, sigma_cov=C)
 
 LabFit uses Generalized Least Squares when ``sigma_cov`` is provided, so the fit accounts for correlated noise.
 
 Asymmetric errors
 -----------------
 
-When ``sigma_low`` and ``sigma_high`` differ, store them as a ``sigma`` tuple or use
+When ``sigma_low`` and ``sigma_high`` differ, pass them separately or use
 :class:`labfit.types.AsymmetricError`.
 
 .. code-block:: python
 
-   labsig = (lower, upper)
-   fitter.fit(x, y, sigma=labsig)
+   fitter.fit(x, y, sigma_low=lower, sigma_high=upper)
 
 Propagation to the fitted parameters is done via the covariance matrix returned by the optimizer.
 The reported errors are the **square root of the diagonal** of the covariance matrix.
@@ -55,16 +96,23 @@ Use :func:`labfit.utils.propagate_errors` to transform parameter uncertainties i
 
 .. code-block:: python
 
+   import numpy as np
    from labfit.utils import propagate_errors
 
    def half_life_from_decay(decay):
-       return decay / np.log(2.0)
+       return np.log(2.0) / decay
 
    half_life, half_life_error = propagate_errors(
        half_life_from_decay,
-       decay=result.params["decay"],
-       jacobian=lambda decay: 1.0 / np.log(2.0),
+       decay=0.5,
+       decay_error=0.02,
+       jacobian=lambda decay: -np.log(2.0) / decay**2,
    )
+
+For the built-in exponential ``A * exp(-decay * x)``, this example gives a
+half-life of approximately 1.386 with uncertainty 0.055, in the units of x.
+For fitted data, substitute ``result.params["decay"]`` and
+``result.uncertainties["decay"]`` for the example values.
 
 Initial guesses and bounds
 --------------------------
@@ -87,11 +135,12 @@ use parameter bounds to prevent the optimizer from jumping to unphysical minima.
 Choosing weights
 -----------------
 
-By default LabFit interprets ``sigma`` as 1-σ uncertainties. If you are supplying a
-design matrix regression, set ``sigma=None`` and pass ``weights`` instead.
+Use ``sigma`` for standard deviations or ``weights=1.0 / sigma**2`` for
+inverse-variance weights. Either representation accepts the same
+``absolute_sigma`` policy; using ``weights`` does not select a policy automatically.
 
 .. code-block:: python
 
-   result = fitter.fit(x, y, weights=1.0 / sigma**2)
+   result = fitter.fit(x, y, weights=1.0 / sigma**2, absolute_sigma=True)
 
 Weighted regression is mathematically equivalent to correlated errors with a diagonal covariance matrix.

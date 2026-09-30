@@ -7,7 +7,9 @@ def fit_curve(model, x, y, y_err, *, p0=None, bounds=None, label="", **kwargs):
     """Fit a model to data with explicit 1-sigma y uncertainties.
 
     A convenience wrapper around :func:`fit` that keeps the error
-    specification as a dedicated positional argument for clarity.
+    specification as a dedicated positional argument for clarity. Pass
+    ``absolute_sigma=True`` through keyword arguments to treat these errors as
+    absolute; the default rescales parameter covariance using residual scatter.
 
     Parameters
     ----------

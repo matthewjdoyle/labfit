@@ -18,7 +18,7 @@ from .utils import effective_sigma
 def _coerce_series_input(x, y=None, *, sigma=None, sigma_low=None, sigma_high=None, sigma_cov=None, label=""):
     if isinstance(x, DataSeries) and y is None:
         return x
-    if isinstance(x, (str, Path)) and y is None:
+    if isinstance(x, str | Path) and y is None:
         series = _load_csv(x)
         return DataSeries(
             x=series.x,
@@ -258,10 +258,19 @@ _GUESSERS = {
 }
 
 
+def _validate_parameter_keys(values, param_names, argument):
+    unknown = set(values) - set(param_names)
+    if unknown:
+        unexpected = ", ".join(sorted(map(str, unknown)))
+        valid = ", ".join(param_names)
+        raise ValueError(f"Unknown {argument} parameters: {unexpected}. Valid parameters: {valid}")
+
+
 def _initial_guess(model, name, x, y, p0=None):
     param_names = model_param_names(model)
     if p0 is not None:
         if isinstance(p0, dict):
+            _validate_parameter_keys(p0, param_names, "p0")
             return [float(p0.get(p, 1.0)) for p in param_names]
         arr = np.asarray(p0, dtype=float)
         if arr.ndim == 0:
@@ -290,6 +299,7 @@ def _coerce_bounds(bounds, param_names):
         n = len(param_names)
         return (np.full(n, -np.inf, dtype=float), np.full(n, np.inf, dtype=float))
     if isinstance(bounds, dict):
+        _validate_parameter_keys(bounds, param_names, "bounds")
         lower = []
         upper = []
         for name in param_names:
@@ -297,7 +307,7 @@ def _coerce_bounds(bounds, param_names):
             lower.append(-np.inf if lo is None else lo)
             upper.append(np.inf if hi is None else hi)
         return np.asarray(lower, dtype=float), np.asarray(upper, dtype=float)
-    if isinstance(bounds, (tuple, list)) and len(bounds) == 2:
+    if isinstance(bounds, tuple | list) and len(bounds) == 2:
         lo, hi = bounds
         return np.asarray(lo, dtype=float), np.asarray(hi, dtype=float)
     raise TypeError("bounds must be None, a (lower, upper) pair, or a dict keyed by parameter name")
@@ -344,6 +354,7 @@ def _fit_single(
     sigma_low=None,
     sigma_high=None,
     sigma_cov=None,
+    absolute_sigma: bool = False,
 ) -> FitResult:
     fn, model_name, param_names = _model_wrapper(model)
     x = np.asarray(series.x, dtype=float)
@@ -357,8 +368,11 @@ def _fit_single(
         sigma_cov=sigma_cov,
     )
     p0_vec = np.asarray(_initial_guess(model, model_name, x, y, p0=p0), dtype=float)
-    if p0_vec.size != len(param_names):
-        p0_vec = np.resize(p0_vec, len(param_names)).astype(float)
+    if p0_vec.ndim != 1 or p0_vec.size != len(param_names):
+        raise ValueError(
+            f"p0 must contain exactly {len(param_names)} values in a one-dimensional array "
+            f"for parameters: {', '.join(param_names)}"
+        )
     lb, ub = _coerce_bounds(bounds, param_names)
 
     if sigma_cov is not None:
@@ -395,7 +409,9 @@ def _fit_single(
 
     if opt.jac is not None and opt.jac.size:
         jtj = opt.jac.T @ opt.jac
-        cov = np.linalg.pinv(jtj) * reduced_chi2
+        cov = np.linalg.pinv(jtj)
+        if not absolute_sigma:
+            cov *= reduced_chi2
     else:
         cov = np.full((popt.size, popt.size), np.nan)
 
@@ -458,6 +474,7 @@ def _fit_single(
         series=series,
         model=fn,
         is_weighted=is_weighted,
+        absolute_sigma=absolute_sigma,
     )
 
 
@@ -473,6 +490,7 @@ def fit(
     sigma_low=None,
     sigma_high=None,
     sigma_cov=None,
+    absolute_sigma: bool = False,
     label="",
     **kwargs,
 ):
@@ -494,10 +512,13 @@ def fit(
         custom callable ``f(x, *params)``.
     p0 : dict or array-like, optional
         Initial parameter guesses. Dict keys must match the parameter
-        names (e.g. ``{"amplitude": 1.0, "mean": 0.0}``).
+        names (e.g. ``{"amplitude": 1.0, "mean": 0.0}``). Missing dict
+        entries default to 1.0; unknown keys are rejected. Arrays must have
+        exactly one value per parameter, in model signature order.
     bounds : dict or tuple of arrays, optional
         Parameter bounds. Either a dict ``{"name": (lo, hi)}`` or a
-        ``(lower, upper)`` tuple of arrays.
+        ``(lower, upper)`` tuple of arrays. Omitted dict entries are
+        unbounded; unknown keys are rejected.
     sigma : array-like or AsymmetricError, optional
         1-σ uncertainties for each y-value.
     weights : array-like, optional
@@ -506,6 +527,13 @@ def fit(
         Asymmetric lower and upper uncertainties.
     sigma_cov : array-like, optional
         Full covariance matrix for correlated measurement errors.
+    absolute_sigma : bool, default False
+        If True, use the supplied uncertainties as absolute measurement errors
+        without rescaling parameter covariance by reduced chi-square. If False,
+        treat them as relative weights and estimate the common noise scale from
+        the residuals. Applies to sigma, weights, asymmetric errors (via their
+        effective sigma), and sigma_cov. With no errors, True assumes unit
+        standard deviation; False estimates it from residuals.
     label : str, optional
         Label for the data series (used in plot legends).
 
@@ -533,10 +561,19 @@ def fit(
         sigma_low=sigma_low,
         sigma_high=sigma_high,
         sigma_cov=sigma_cov,
+        absolute_sigma=absolute_sigma,
     )
 
 
-def fit_multi(dataset: Iterable[DataSeries] | Dataset, *, model="linear", p0=None, bounds=None, **kwargs):
+def fit_multi(
+    dataset: Iterable[DataSeries] | Dataset,
+    *,
+    model="linear",
+    p0=None,
+    bounds=None,
+    absolute_sigma: bool = False,
+    **kwargs,
+):
     """Fit the same model to every series in a collection.
 
     Parameters
@@ -550,6 +587,8 @@ def fit_multi(dataset: Iterable[DataSeries] | Dataset, *, model="linear", p0=Non
         Shared initial parameter guesses for all series.
     bounds : dict or tuple of arrays, optional
         Shared parameter bounds for all series.
+    absolute_sigma : bool, default False
+        Covariance-scaling policy for every series; see :func:`fit`.
 
     Returns
     -------
@@ -557,7 +596,10 @@ def fit_multi(dataset: Iterable[DataSeries] | Dataset, *, model="linear", p0=Non
         One result per input series.
     """
     series_list = list(dataset)
-    return [_fit_single(series, model=model, p0=p0, bounds=bounds, **kwargs) for series in series_list]
+    return [
+        _fit_single(series, model=model, p0=p0, bounds=bounds, absolute_sigma=absolute_sigma, **kwargs)
+        for series in series_list
+    ]
 
 
 __all__ = ["fit", "fit_multi"]
