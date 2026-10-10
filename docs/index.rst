@@ -37,6 +37,7 @@ Core goals:
    :hidden:
 
    quickstart
+   tutorial
    concepts
    least-squares
    fitting-functions
@@ -52,6 +53,8 @@ Core goals:
 Quick links:
 
 - **5-minute quickstart** - Get a working fit in 5 minutes: CSV, errors, fit, plot, χ².  :ref:`quickstart`
+
+- **Full laboratory tutorial** - Six worked experiments with new data, executable scripts, and downloadable Markdown, LaTeX and PDF. See :ref:`tutorial`.
 
 - **Concepts** - Diagnostics, reduced χ², and error propagation. :ref:`concepts`
 

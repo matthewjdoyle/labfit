@@ -1,0 +1,204 @@
+{
+  "description": "Synthetic laboratory measurements for education; no real instruments were measured.",
+  "random_generator": "numpy.random.default_rng (PCG64)",
+  "versions": {
+    "labfit": "0.2.0",
+    "numpy": "2.2.6",
+    "scipy": "1.15.2",
+    "matplotlib": "3.10.1"
+  },
+  "datasets": {
+    "calibration": {
+      "file": "calibration.csv",
+      "seed": 101,
+      "samples": 26,
+      "equation": "y = slope*x + intercept",
+      "true_parameters": {
+        "slope": 0.082,
+        "intercept": 0.18
+      },
+      "units": {
+        "x": "degree C",
+        "y": "V",
+        "slope": "V/degree C",
+        "intercept": "V"
+      },
+      "noise": "Independent zero-mean Gaussian; sigma is calibrated 1-standard-deviation noise.",
+      "x_uncertainty": "Negligible; x is treated as exact."
+    },
+    "decay": {
+      "file": "decay.csv",
+      "seed": 202,
+      "samples": 49,
+      "equation": "y = amplitude*exp(-decay*x)",
+      "true_parameters": {
+        "amplitude": 4.8,
+        "decay": 0.24
+      },
+      "units": {
+        "x": "s",
+        "y": "V",
+        "amplitude": "V",
+        "decay": "1/s"
+      },
+      "noise": "Independent zero-mean Gaussian; sigma is calibrated 1-standard-deviation noise.",
+      "x_uncertainty": "Negligible; x is treated as exact."
+    },
+    "single_peak": {
+      "file": "single_peak.csv",
+      "seed": 303,
+      "samples": 141,
+      "equation": "y = amplitude*exp(-0.5*((x-mean)/sigma)^2) + m*x + b",
+      "true_parameters": {
+        "amplitude": 2.8,
+        "mean": 0.35,
+        "sigma": 0.62,
+        "m": 0.12,
+        "b": 0.7
+      },
+      "units": {
+        "x": "nm relative to 550 nm",
+        "y": "mV",
+        "amplitude": "mV",
+        "mean": "nm",
+        "sigma": "nm",
+        "m": "mV/nm",
+        "b": "mV"
+      },
+      "noise": "Independent zero-mean Gaussian; sigma is calibrated 1-standard-deviation noise.",
+      "x_uncertainty": "Negligible; x is treated as exact."
+    },
+    "oscillator_1": {
+      "file": "oscillator_1.csv",
+      "seed": 401,
+      "samples": 161,
+      "equation": "y = offset + amplitude*exp(-damping*x)*sin(2*pi*frequency*x + phase)",
+      "true_parameters": {
+        "amplitude": 3.1,
+        "damping": 0.17,
+        "frequency": 0.88,
+        "phase": 0.2,
+        "offset": 0.12
+      },
+      "units": {
+        "x": "s",
+        "y": "mm",
+        "amplitude": "mm",
+        "damping": "1/s",
+        "frequency": "Hz",
+        "phase": "rad",
+        "offset": "mm"
+      },
+      "noise": "Independent zero-mean Gaussian; sigma is calibrated 1-standard-deviation noise.",
+      "x_uncertainty": "Negligible; x is treated as exact."
+    },
+    "oscillator_2": {
+      "file": "oscillator_2.csv",
+      "seed": 402,
+      "samples": 161,
+      "equation": "y = offset + amplitude*exp(-damping*x)*sin(2*pi*frequency*x + phase)",
+      "true_parameters": {
+        "amplitude": 2.8,
+        "damping": 0.19,
+        "frequency": 0.9,
+        "phase": 0.35,
+        "offset": 0.08
+      },
+      "units": {
+        "x": "s",
+        "y": "mm",
+        "amplitude": "mm",
+        "damping": "1/s",
+        "frequency": "Hz",
+        "phase": "rad",
+        "offset": "mm"
+      },
+      "noise": "Independent zero-mean Gaussian; sigma is calibrated 1-standard-deviation noise.",
+      "x_uncertainty": "Negligible; x is treated as exact."
+    },
+    "oscillator_3": {
+      "file": "oscillator_3.csv",
+      "seed": 403,
+      "samples": 161,
+      "equation": "y = offset + amplitude*exp(-damping*x)*sin(2*pi*frequency*x + phase)",
+      "true_parameters": {
+        "amplitude": 3.3,
+        "damping": 0.16,
+        "frequency": 0.87,
+        "phase": 0.1,
+        "offset": 0.15
+      },
+      "units": {
+        "x": "s",
+        "y": "mm",
+        "amplitude": "mm",
+        "damping": "1/s",
+        "frequency": "Hz",
+        "phase": "rad",
+        "offset": "mm"
+      },
+      "noise": "Independent zero-mean Gaussian; sigma is calibrated 1-standard-deviation noise.",
+      "x_uncertainty": "Negligible; x is treated as exact."
+    },
+    "double_peak": {
+      "file": "double_peak.csv",
+      "seed": 505,
+      "samples": 201,
+      "equation": "u=x-550; y=A1*exp(-0.5*((u-c1)/w1)^2)+A2*exp(-0.5*((u-c2)/w2)^2)+m*u+b",
+      "true_parameters": {
+        "A1": 2.5,
+        "c1": -0.1,
+        "w1": 0.43,
+        "A2": 1.8,
+        "c2": 0.8,
+        "w2": 0.52,
+        "m": 0.06,
+        "b": 0.35,
+        "reference_wavelength": 550.0
+      },
+      "units": {
+        "x": "nm",
+        "y": "mV",
+        "A1": "mV",
+        "c1": "nm",
+        "w1": "nm",
+        "A2": "mV",
+        "c2": "nm",
+        "w2": "nm",
+        "m": "mV/nm",
+        "b": "mV"
+      },
+      "noise": "Independent zero-mean Gaussian; sigma is calibrated 1-standard-deviation noise.",
+      "x_uncertainty": "Negligible; x is treated as exact."
+    },
+    "thermal": {
+      "file": "thermal.csv",
+      "covariance_file": "thermal_covariance.csv",
+      "seed": 606,
+      "samples": 81,
+      "equation": "y=amplitude*(1-exp(-x/tau))+offset",
+      "true_parameters": {
+        "amplitude": 12.0,
+        "tau": 28.0,
+        "offset": 21.0
+      },
+      "units": {
+        "x": "s",
+        "y": "degree C",
+        "amplitude": "degree C",
+        "tau": "s",
+        "offset": "degree C",
+        "covariance": "degree C squared"
+      },
+      "noise": "Zero-mean Gaussian drawn using a Cholesky factor of the supplied covariance.",
+      "covariance_equation": "C[i,j]=correlated_sigma^2*rho^abs(i-j)+independent_sigma^2*delta[i,j]",
+      "noise_parameters": {
+        "rho": 0.78,
+        "correlated_sigma": 0.2,
+        "independent_sigma": 0.06
+      },
+      "row_order": "Covariance rows/columns follow thermal.csv observation order; do not sort separately.",
+      "x_uncertainty": "Negligible; x is treated as exact."
+    }
+  }
+}

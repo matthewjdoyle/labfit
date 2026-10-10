@@ -76,3 +76,15 @@ plot.save("gaussian_fit.png")
 
 - Python ≥ 3.10
 - NumPy, SciPy, Matplotlib
+
+## Full laboratory tutorial
+
+Follow [six worked experiments](examples/tutorial/tutorial.md), from calibration and decay
+to overlapping spectral peaks and correlated thermal measurements.
+The tutorial includes newly generated CSV data, executable analyses, uncertainty
+interpretation and publication-quality figures.
+
+- [Printable PDF](examples/tutorial/tutorial.pdf)
+- [Editable LaTeX](examples/tutorial/tutorial.tex)
+- [Complete tutorial bundle](examples/tutorial/tutorial_bundle.zip)
+- [Run and rebuild instructions](examples/tutorial/README.md)
