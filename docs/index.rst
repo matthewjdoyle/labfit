@@ -58,49 +58,49 @@ Explore the Docs
 .. grid:: 1 2 2 3
    :gutter: 3
 
-   .. grid-item-card:: 🚀 5-Minute Quickstart
+   .. grid-item-card:: 5-Minute Quickstart
       :link: quickstart
       :link-type: doc
 
       From CSV to fitted curve, reduced χ², and residuals plot in 5 minutes.
 
-   .. grid-item-card:: 📐 How Least-Squares Works
+   .. grid-item-card:: How Least-Squares Works
       :link: least-squares
       :link-type: doc
 
       Visual intuition: residuals, χ² landscapes, curvature, and optimisers.
 
-   .. grid-item-card:: 🔬 Core Concepts
+   .. grid-item-card:: Core Concepts
       :link: concepts
       :link-type: doc
 
       Diagnostics, reduced χ², degrees of freedom, and error propagation.
 
-   .. grid-item-card:: 📈 Built-in Models & Fitters
+   .. grid-item-card:: Built-in Models & Fitters
       :link: fitting-functions
       :link-type: doc
 
       Textbook physics models: linear, polynomial, Gaussian, exponential, and power laws.
 
-   .. grid-item-card:: 🖼️ Visual Gallery
+   .. grid-item-card:: Visual Gallery
       :link: gallery
       :link-type: doc
 
       12 runnable examples with publication-ready plots and console outputs.
 
-   .. grid-item-card:: 🛠️ Utilities & I/O
+   .. grid-item-card:: Utilities & I/O
       :link: utilities
       :link-type: doc
 
       CSV/TXT loaders, error transforms, and variance-covariance helpers.
 
-   .. grid-item-card:: 📚 API Reference
+   .. grid-item-card:: API Reference
       :link: api
       :link-type: doc
 
       Complete docstrings and signatures for all functions and classes.
 
-   .. grid-item-card:: 💡 Frequently Asked Questions
+   .. grid-item-card:: Frequently Asked Questions
       :link: faq
       :link-type: doc
 
