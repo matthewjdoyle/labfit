@@ -7,8 +7,92 @@ The examples below are fully reproducible and the accompanying images are
 committed under ``docs/_static/gallery/``. They are generated from the same
 public API you would use in your own analysis.
 
+.. grid:: 1 2 3 3
+   :gutter: 3
+
+   .. grid-item-card:: Linear fit with residuals
+      :link: gallery-linear
+      :link-type: ref
+      :img-top: _static/gallery/linear_fit.png
+
+      Core least-squares workflow with 1-σ uncertainties and residual analysis.
+
+   .. grid-item-card:: Gaussian peak fit
+      :link: gallery-gaussian
+      :link-type: ref
+      :img-top: _static/gallery/gaussian_fit.png
+
+      Built-in Gaussian model with automated initial guess heuristics.
+
+   .. grid-item-card:: Multi-series comparison
+      :link: gallery-damped-oscillators
+      :link-type: ref
+      :img-top: _static/gallery/damped_oscillators.png
+
+      Simultaneous multi-dataset fitting with individual residual subplots.
+
+   .. grid-item-card:: Bimodal Gaussian peaks
+      :link: gallery-bimodal-gaussian
+      :link-type: ref
+      :img-top: _static/gallery/bimodal_gaussian.png
+
+      Multi-peak deconvolution with bounds and parameter constraints.
+
+   .. grid-item-card:: Exponential decay
+      :link: gallery-exponential-decay
+      :link-type: ref
+      :img-top: _static/gallery/exponential_fit.png
+
+      Counting-statistics decay fitting with per-point error weighting.
+
+   .. grid-item-card:: Domain subset fitting
+      :link: gallery-subset-fit
+      :link-type: ref
+      :img-top: _static/gallery/subset_fit.png
+
+      Isolate and fit specific regions of interest while preserving full-range data.
+
+   .. grid-item-card:: Model comparison
+      :link: gallery-model-comparison
+      :link-type: ref
+      :img-top: _static/gallery/model_comparison.png
+
+      Side-by-side reduced χ² comparison between competing physics models.
+
+   .. grid-item-card:: Confidence & prediction bands
+      :link: gallery-confidence-bands
+      :link-type: ref
+      :img-top: _static/gallery/confidence_band.png
+
+      95 % mean-response and future-observation confidence bounds.
+
+   .. grid-item-card:: Error propagation
+      :link: gallery-error-propagation
+      :link-type: ref
+      :img-top: _static/gallery/error_propagation.png
+
+      Propagate fitted parameter covariances into derived physical quantities.
+
+   .. grid-item-card:: Peak with sloping background
+      :link: gallery-spectral-peak
+      :link-type: ref
+      :img-top: _static/gallery/gaussian_baseline.png
+
+      Combined signal plus linear background fit with automated baseline estimation.
+
+   .. grid-item-card:: Correlated errors (GLS)
+      :link: gallery-gls
+      :link-type: ref
+      :img-top: _static/gallery/generalized_least_squares.png
+
+      Generalized least squares using full covariance matrices for correlated noise.
+
+----
+
+.. _gallery-linear:
+
 Linear fit with residuals
-------------------------------
+-------------------------
 
 This example shows the core least-squares flow from raw arrays to a fit result
 with uncertainties and residuals.
@@ -41,6 +125,8 @@ Linear fit console output
    slope = 1.860589 ± 0.008830
    intercept = -0.694920 ± 0.041056
    reduced chi^2 = 0.788588
+
+.. _gallery-gaussian:
 
 Gaussian fit
 ------------
@@ -76,6 +162,8 @@ Gaussian fit console output
    mean = 0.7529858 ± 0.0072789
    sigma = 1.1724581 ± 0.0072790
    reduced chi^2 = 0.0175698
+
+.. _gallery-damped-oscillators:
 
 Multi-series damped oscillator comparison
 -----------------------------------------
@@ -126,6 +214,8 @@ Damped oscillator console output
      phase = -0.049326 ± 0.006753
      reduced chi^2 = 0.914054
 
+.. _gallery-bimodal-gaussian:
+
 Bimodal Gaussian fit
 --------------------
 
@@ -174,6 +264,8 @@ Bimodal Gaussian fit console output
    sigma2 = 1.195551 ± 0.008429
    reduced chi^2 = 0.003556
 
+.. _gallery-exponential-decay:
+
 Exponential decay with per-point errors
 ----------------------------------------
 
@@ -219,6 +311,8 @@ Exponential fit console output
    decay = 0.399328 ± 0.008559
    reduced chi^2 = 0.768797
 
+.. _gallery-subset-fit:
+
 Fitting a subset of your data
 -----------------------------
 
@@ -263,6 +357,8 @@ Subset fit console output
    mean = 5.010007 ± 0.001580
    sigma = 0.791448 ± 0.001760
    reduced chi^2 = 0.805082
+
+.. _gallery-model-comparison:
 
 Comparing two models on the same data
 --------------------------------------
@@ -338,6 +434,8 @@ Lorentzian (close but wrong) console output
      reduced chi2 = 17.16  -- model may be wrong or errors underestimated
      p ~ 0.0e+00
 
+.. _gallery-confidence-bands:
+
 Confidence and prediction bands
 --------------------------------
 
@@ -402,6 +500,8 @@ Confidence band console output
      residual variance = 0.002175 (y units squared)
      reduced chi2 = 1.074
      p = 0.365
+
+.. _gallery-error-propagation:
 
 Derived quantities via error propagation
 -----------------------------------------
@@ -473,6 +573,8 @@ Error propagation console output
      reduced chi2 = 1.083
      p = 0.322
    half-life = 2.8980 +/- 0.0320 s
+
+.. _gallery-spectral-peak:
 
 Spectral peak with a sloping background
 -----------------------------------------
@@ -553,6 +655,8 @@ Gaussian baseline console output
    With baseline    chi2_r = 1.044
    Without baseline chi2_r = 47.774
 
+.. _gallery-custom-model:
+
 Custom model with multiple starting points
 ------------------------------------------
 
@@ -613,6 +717,8 @@ Custom model console output
    c1 = -0.1092 +/- 0.0162 nm
    c2 =  0.7903 +/- 0.0340 nm
    reduced chi^2 = 1.0790
+
+.. _gallery-gls:
 
 Generalized least squares with correlated errors
 -------------------------------------------------

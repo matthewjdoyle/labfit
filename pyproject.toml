@@ -36,8 +36,10 @@ dev = [
     "mypy>=1.8",
 ]
 docs = [
-    "sphinx>=7.2,<8",
-    "sphinx-rtd-theme>=2.0",
+    "sphinx>=7.2",
+    "furo>=2024.1.0",
+    "sphinx-copybutton>=0.5.2",
+    "sphinx-design>=0.6.0",
     "tomli>=2.0; python_version < '3.11'",
 ]
 

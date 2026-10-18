@@ -9,9 +9,11 @@ Welcome to LabFit
 
 .. raw:: html
 
-   <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:16px;">
-     <code style="background:#2c3e50; color:#fff; padding:6px 16px; border-radius:6px; font-size:1.1em; white-space:nowrap;">pip install labfit</code>
-     <span style="color:#7f8c8d; font-size:0.9em;">Python ≥ 3.10</span>
+   <div class="hero-install-container">
+     <div class="hero-install-code">pip install labfit</div>
+     <span class="hero-badge-pill">Python ≥ 3.10</span>
+     <span class="hero-badge-pill pill-teal">MIT Licensed</span>
+     <span class="hero-badge-pill">NumPy &amp; SciPy</span>
    </div>
 
 .. image:: _static/banner.svg
@@ -19,19 +21,24 @@ Welcome to LabFit
    :width: 100%
    :align: center
 
-`LabFit` is a small, student-friendly Python library for least-squares curve fitting,
-error propagation, and plotting.
+`LabFit` is a lightweight, student-friendly Python library for least-squares curve fitting,
+error propagation, and scientific plotting.
 
-It ships with built-in textbook models, convenience wrappers for quick analysis,
-and a plotting layer that can show residuals and multi-series comparisons.
+It ships with built-in textbook models, automatic initial guesses,
+and a publication-quality plotting layer with residual subplots and multi-series comparisons.
 
-Core goals:
+Core Features
+-------------
 
-- **Reproducible workflows** from CSV to fitted curve in minutes.
-- **Reduced χ² (chi-square) analysis** returned for every fit so you can immediately assess goodness-of-fit.
-- **Multiple series support** - plot and fit many lines on one figure with a shared or individual axis.
-- **Treat correlated and asymmetric errors correctly** without rewriting propagation code each time.
-- **Complete reference docs** for fitting helpers, built-in model functions, plotting, and utilities.
+- **Reproducible workflows** from CSV or NumPy arrays to fitted parameters in seconds.
+- **Reduced χ² (chi-square) diagnostics** computed automatically to assess goodness-of-fit.
+- **Publication-ready plotting** with residuals, confidence bands, and multi-series axes.
+- **Rigorous uncertainty handling** for correlated, asymmetric, and derived quantities.
+- **Complete, typed reference docs** for every fitter, model function, and utility.
+
+.. note::
+
+   **Hands-on Tutorials**: Six worked experimental lab walkthroughs (sensor calibration, decay kinetics, Gaussian peaks, damped oscillations, and GLS) with runnable scripts and CSV data are available in the repository under ``examples/tutorial/``.
 
 .. toctree::
    :hidden:
@@ -45,30 +52,56 @@ Core goals:
    gallery
    faq
 
-.. raw:: html
+Explore the Docs
+----------------
 
-   <div class="grid-links">
+.. grid:: 1 2 2 3
+   :gutter: 3
 
-Quick links:
+   .. grid-item-card:: 🚀 5-Minute Quickstart
+      :link: quickstart
+      :link-type: doc
 
-- **5-minute quickstart** - Get a working fit in 5 minutes: CSV, errors, fit, plot, χ².  :ref:`quickstart`
+      From CSV to fitted curve, reduced χ², and residuals plot in 5 minutes.
 
-- **Practical tutorial** - Six worked experiments (calibration, decay, peaks, oscillations, GLS) with executable scripts and CSV data.  See ``examples/tutorial/`` in the repository.
+   .. grid-item-card:: 📐 How Least-Squares Works
+      :link: least-squares
+      :link-type: doc
 
-- **Concepts** - Diagnostics, reduced χ², and error propagation. :ref:`concepts`
+      Visual intuition: residuals, χ² landscapes, curvature, and optimisers.
 
-- **How least-squares works** - What residuals, χ² surfaces, and optimisers actually do. :ref:`least-squares`
+   .. grid-item-card:: 🔬 Core Concepts
+      :link: concepts
+      :link-type: doc
 
-- **Fitting functions** - All fitting entry points and built-in fitting models. :ref:`fitting-functions`
+      Diagnostics, reduced χ², degrees of freedom, and error propagation.
 
-- **API Reference** - :ref:`api`
+   .. grid-item-card:: 📈 Built-in Models & Fitters
+      :link: fitting-functions
+      :link-type: doc
 
-- **Utilities** - CSV/TXT loading and uncertainty helpers. :ref:`utilities`
+      Textbook physics models: linear, polynomial, Gaussian, exponential, and power laws.
 
-- **Example gallery** - Runnable examples: linear, Gaussian, exponential, confidence bands, error propagation, custom models, GLS, and more. :ref:`gallery`
+   .. grid-item-card:: 🖼️ Visual Gallery
+      :link: gallery
+      :link-type: doc
 
-- **FAQ** - Common pitfalls: correlated errors, bad initial guesses, weighting, and more. :ref:`faq`
+      12 runnable examples with publication-ready plots and console outputs.
 
-.. raw:: html
+   .. grid-item-card:: 🛠️ Utilities & I/O
+      :link: utilities
+      :link-type: doc
 
-   </div>
+      CSV/TXT loaders, error transforms, and variance-covariance helpers.
+
+   .. grid-item-card:: 📚 API Reference
+      :link: api
+      :link-type: doc
+
+      Complete docstrings and signatures for all functions and classes.
+
+   .. grid-item-card:: 💡 Frequently Asked Questions
+      :link: faq
+      :link-type: doc
+
+      Initial guesses, weighting choices, correlated errors, and common pitfalls.

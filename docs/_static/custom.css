@@ -1,0 +1,167 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap');
+
+:root {
+  --font-stack: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  --font-stack--monospace: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  --font-size--small: 0.875rem;
+  --font-size--normal: 1rem;
+}
+
+/* Brand Accent Colors */
+:root {
+  --labfit-navy: #2c3e50;
+  --labfit-teal: #1abc9c;
+  --labfit-teal-dark: #16a085;
+  --labfit-orange: #e67e22;
+  --labfit-blue: #2980b9;
+}
+
+/* Hero Section & Install Badge */
+.hero-install-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 1.25rem 0 1.5rem 0;
+  padding: 0.75rem 1rem;
+  background: var(--color-background-secondary);
+  border: 1px solid var(--color-background-border);
+  border-radius: 10px;
+}
+
+.hero-install-code {
+  font-family: var(--font-stack--monospace);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-brand-primary);
+  background: var(--color-background-primary);
+  border: 1px solid var(--color-background-border);
+  padding: 6px 14px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hero-install-code::before {
+  content: "$";
+  color: var(--labfit-orange);
+  font-weight: 700;
+}
+
+.hero-badge-pill {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: var(--color-background-primary);
+  color: var(--color-foreground-secondary);
+  border: 1px solid var(--color-background-border);
+}
+
+.hero-badge-pill.pill-teal {
+  color: var(--labfit-teal-dark);
+  background: rgba(26, 188, 156, 0.1);
+  border-color: rgba(26, 188, 156, 0.3);
+}
+
+/* Subtle glow / border on banner */
+img[src*="banner.svg"] {
+  border-radius: 10px;
+  border: 1px solid var(--color-background-border);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+  margin-bottom: 1.5rem;
+}
+
+/* Sphinx Design Cards Enhancement */
+.sd-card {
+  border-radius: 10px !important;
+  border: 1px solid var(--color-background-border) !important;
+  background-color: var(--color-background-primary) !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.sd-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  border-color: var(--labfit-teal) !important;
+}
+
+.sd-card-header {
+  font-weight: 600 !important;
+  font-size: 1.05rem !important;
+  border-bottom: 1px solid var(--color-background-border) !important;
+  background: transparent !important;
+}
+
+.sd-card-title {
+  color: var(--color-brand-primary) !important;
+}
+
+/* Figures and Gallery Images */
+.figure img,
+.gallery-figure img,
+figure img {
+  border-radius: 8px;
+  border: 1px solid var(--color-background-border);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.04);
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+.figure img:hover,
+figure img:hover {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.09);
+}
+
+.figure .caption,
+figure figcaption {
+  font-size: 0.88rem;
+  color: var(--color-foreground-secondary);
+  margin-top: 0.5rem;
+  font-style: italic;
+  text-align: center;
+}
+
+/* Code block aesthetic improvements */
+div.highlight {
+  border-radius: 8px;
+  border: 1px solid var(--color-background-border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+}
+
+/* Tables */
+table.docutils {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--color-background-border);
+}
+
+table.docutils th {
+  background-color: var(--color-background-secondary);
+  font-weight: 600;
+}
+
+/* Math block spacing */
+div.math {
+  overflow-x: auto;
+  padding: 0.5rem 0;
+}
+
+/* Copy button subtle appearance */
+button.copybtn {
+  opacity: 0.4;
+  transition: opacity 0.2s ease, transform 0.1s ease;
+  border-radius: 4px;
+}
+
+div.highlight:hover button.copybtn {
+  opacity: 0.9;
+}
+
+button.copybtn:hover {
+  opacity: 1;
+  transform: scale(1.05);
+}
