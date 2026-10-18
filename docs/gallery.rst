@@ -395,9 +395,13 @@ Confidence band console output
 
 .. code-block:: console
 
-   slope = 0.081817 ± 0.000450
-   intercept = 0.189108 ± 0.012919
-   reduced chi^2 = 0.780327
+   FitResult: linear
+     slope = 0.081836 +/- 0.00058835
+     intercept = 0.18191 +/- 0.017153
+     degrees of freedom = 24
+     residual variance = 0.002175 (y units squared)
+     reduced chi2 = 1.074
+     p = 0.365
 
 Derived quantities via error propagation
 -----------------------------------------
@@ -461,10 +465,14 @@ Error propagation console output
 
 .. code-block:: console
 
-   amplitude = 4.840793 ± 0.029218
-   decay = 0.239854 ± 0.002183
-   reduced chi^2 = 0.754217
-   half-life = 2.8898 ± 0.0263 s
+   FitResult: exponential
+     amplitude = 4.8119 +/- 0.035208
+     decay = 0.23918 +/- 0.0026418
+     degrees of freedom = 47
+     residual variance = 0.006093 (y units squared)
+     reduced chi2 = 1.083
+     p = 0.322
+   half-life = 2.8980 +/- 0.0320 s
 
 Spectral peak with a sloping background
 -----------------------------------------
@@ -532,13 +540,18 @@ Gaussian baseline console output
 
 .. code-block:: console
 
-   amplitude = 2.797... ± ...
-   mean      = 0.347... ± ...
-   sigma     = 0.624... ± ...
-   m         = 0.121... ± ...
-   b         = 0.700... ± ...
-   With baseline   chi^2_r = 0.965
-   Without baseline chi^2_r = 14.3
+   FitResult: gaussian_baseline
+     amplitude = 2.773 +/- 0.020435
+     mean = 0.35311 +/- 0.0049682
+     sigma = 0.62542 +/- 0.0052895
+     m = 0.12364 +/- 0.0026217
+     b = 0.69802 +/- 0.0070744
+     degrees of freedom = 136
+     residual variance = 0.004226 (y units squared)
+     reduced chi2 = 1.044
+     p = 0.345
+   With baseline    chi2_r = 1.044
+   Without baseline chi2_r = 47.774
 
 Custom model with multiple starting points
 ------------------------------------------
@@ -597,9 +610,9 @@ Custom model console output
 
 .. code-block:: console
 
-   c1 = -0.0997 +/- 0.0073 nm
-   c2 =  0.8011 +/- 0.0082 nm
-   reduced chi^2 = 0.9714
+   c1 = -0.1092 +/- 0.0162 nm
+   c2 =  0.7903 +/- 0.0340 nm
+   reduced chi^2 = 1.0790
 
 Generalized least squares with correlated errors
 -------------------------------------------------
@@ -655,7 +668,11 @@ GLS console output
 
 .. code-block:: console
 
-   amplitude = 11.987... +/- ...
-   tau       = 28.07...  +/- ...
-   offset    = 20.97...  +/- ...
-   reduced chi^2 = 0.98...
+   FitResult: exponential_rise
+     amplitude = 11.766 +/- 0.20335
+     tau = 27.31 +/- 1.139
+     offset = 21.123 +/- 0.19191
+     degrees of freedom = 78
+     residual variance = 0.03933 (y units squared)
+     reduced chi2 = 0.8221
+     p = 0.871
