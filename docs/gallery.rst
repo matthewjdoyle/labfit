@@ -337,3 +337,325 @@ Lorentzian (close but wrong) console output
      gamma = 0.93677 +/- 0.023328
      reduced chi2 = 17.16  -- model may be wrong or errors underestimated
      p ~ 0.0e+00
+
+Confidence and prediction bands
+--------------------------------
+
+When ``absolute_sigma=True``, LabFit can draw a **mean-response confidence band**
+(uncertainty in the fitted line) and a **future-observation prediction band**
+(uncertainty for a new single measurement).  Pass ``show_ci=True`` to
+:func:`labfit.plot_fit`; add ``prediction=True`` and ``prediction_sigma`` for the
+wider band.
+
+.. code-block:: python
+
+   import numpy as np
+   from labfit import fit, plot_fit
+
+   rng = np.random.default_rng(101)
+   x = np.linspace(0, 50, 26)
+   sigma = np.full(26, 0.045)
+   y = 0.082 * x + 0.18 + rng.normal(0.0, sigma)
+
+   result = fit(x, y, sigma=sigma, model="linear", absolute_sigma=True)
+
+   # Mean-response confidence band (uncertainty in the fitted line)
+   plot_ci = plot_fit(
+       result,
+       show_ci=True, ci_level=0.95,
+       xlabel="Reference temperature (°C)", ylabel="Sensor voltage (V)",
+       title="Linear calibration: 95 % confidence band",
+   )
+   plot_ci.save("docs/_static/gallery/confidence_band.png")
+
+   # Future-observation prediction band (new single measurement)
+   plot_pred = plot_fit(
+       result,
+       show_ci=True, prediction=True, ci_level=0.95, prediction_sigma=0.045,
+       xlabel="Reference temperature (°C)", ylabel="Sensor voltage (V)",
+       title="Linear calibration: 95 % prediction band",
+   )
+   plot_pred.save("docs/_static/gallery/prediction_band.png")
+
+.. figure:: _static/gallery/confidence_band.png
+   :alt: Linear calibration with 95% confidence band
+   :width: 100%
+
+   The shaded region shows the 95 % confidence interval for the mean response.
+
+.. figure:: _static/gallery/prediction_band.png
+   :alt: Linear calibration with 95% prediction band
+   :width: 100%
+
+   The wider shaded region shows where a single new observation is expected to fall
+   with 95 % probability, accounting for both fit uncertainty and measurement noise.
+
+Confidence band console output
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: console
+
+   slope = 0.081817 ± 0.000450
+   intercept = 0.189108 ± 0.012919
+   reduced chi^2 = 0.780327
+
+Derived quantities via error propagation
+-----------------------------------------
+
+Use :func:`labfit.utils.propagate_errors` to compute uncertainties for quantities
+that depend on fitted parameters.  The function accepts a scalar Jacobian for
+single-parameter propagation, or a full covariance matrix for multi-parameter
+propagation.
+
+This example fits an exponential decay and derives the **half-life**
+:math:`t_{1/2} = \ln 2 / \lambda`, propagating the uncertainty in the decay rate.
+
+.. code-block:: python
+
+   import numpy as np
+   from labfit import fit, plot_fit
+   from labfit.utils import propagate_errors
+
+   rng = np.random.default_rng(202)
+   x = np.linspace(0, 12, 49)
+   sigma = np.full(49, 0.075)
+   y = 4.8 * np.exp(-0.24 * x) + rng.normal(0.0, sigma)
+
+   # Estimate initial decay rate from two well-separated points
+   mid = len(y) // 2
+   rate_guess = np.log(y[0] / y[mid]) / x[mid]
+
+   result = fit(
+       x, y, sigma=sigma,
+       model="exponential",
+       absolute_sigma=True,
+       p0={"amplitude": float(y[0]), "decay": float(rate_guess)},
+       bounds={"amplitude": (0, None), "decay": (0.001, 2)},
+   )
+
+   half_life, half_life_error = propagate_errors(
+       lambda decay: np.log(2.0) / decay,
+       jacobian=lambda decay: -np.log(2.0) / decay ** 2,
+       decay=result.params["decay"],
+       decay_error=result.uncertainties["decay"],
+   )
+   print(f"half-life = {half_life:.4f} ± {half_life_error:.4f} s")
+
+   plot = plot_fit(
+       result,
+       show_ci=True, ci_level=0.95,
+       xlabel="Time (s)", ylabel="Signal voltage (V)",
+       title="Exponential signal decay",
+   )
+   plot.save("docs/_static/gallery/error_propagation.png")
+
+.. figure:: _static/gallery/error_propagation.png
+   :alt: Exponential decay fit with confidence band
+   :width: 100%
+
+   Exponential decay fit with a 95 % confidence band.  The half-life and its
+   uncertainty are derived from the fitted decay rate using error propagation.
+
+Error propagation console output
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: console
+
+   amplitude = 4.840793 ± 0.029218
+   decay = 0.239854 ± 0.002183
+   reduced chi^2 = 0.754217
+   half-life = 2.8898 ± 0.0263 s
+
+Spectral peak with a sloping background
+-----------------------------------------
+
+Real spectra often sit on a slowly-varying background.  Use the built-in
+``gaussian_baseline`` model (Gaussian peak + linear baseline) and supply
+initial guesses derived from the edge regions of the spectrum.
+
+The example also fits a plain Gaussian (without baseline) to show that ignoring
+the background inflates χ² and distorts the parameter estimates.
+
+.. code-block:: python
+
+   import numpy as np
+   from labfit import fit, plot_fit
+
+   rng = np.random.default_rng(303)
+   x = np.linspace(-3.5, 3.5, 141)
+   y_true = 2.8 * np.exp(-0.5 * ((x - 0.35) / 0.62) ** 2) + 0.12 * x + 0.7
+   sigma = 0.045 + 0.018 * np.sqrt(y_true)
+   y = y_true + rng.normal(0.0, sigma)
+
+   # Estimate background slope from the edge points
+   edge = np.abs(x) > 2.5
+   slope, intercept = np.polyfit(x[edge], y[edge], 1)
+   corrected = y - slope * x - intercept
+   centre = float(x[np.argmax(corrected)])
+
+   # Correct model: Gaussian + linear baseline
+   result = fit(
+       x, y, sigma=sigma,
+       model="gaussian_baseline",
+       absolute_sigma=True,
+       p0={"amplitude": float(corrected.max()), "mean": centre,
+           "sigma": 0.7, "m": float(slope), "b": float(intercept)},
+       bounds={"amplitude": (0, None), "mean": (-1.5, 1.5), "sigma": (0.1, 2)},
+   )
+   plot = plot_fit(
+       result,
+       xlabel="Wavelength offset from 550 nm (nm)", ylabel="Signal (mV)",
+       title="Gaussian + linear baseline",
+   )
+   plot.save("docs/_static/gallery/gaussian_baseline.png")
+
+   # Incorrect model: plain Gaussian — chi^2 reveals the misspecification
+   wrong = fit(
+       x, y, sigma=sigma,
+       model="gaussian",
+       absolute_sigma=True,
+       p0={"amplitude": float(y.max()), "mean": centre, "sigma": 0.7},
+       bounds={"amplitude": (0, None), "mean": (-1.5, 1.5), "sigma": (0.1, 4)},
+   )
+   print(f"With baseline   chi^2_r = {result.reduced_chi2:.3f}")
+   print(f"Without baseline chi^2_r = {wrong.reduced_chi2:.3f}")
+
+.. figure:: _static/gallery/gaussian_baseline.png
+   :alt: Gaussian peak with linear baseline fit
+   :width: 100%
+
+   The ``gaussian_baseline`` model captures the sloping background.  Fitting a
+   plain Gaussian (no baseline) gives χ²_r ≫ 1, exposing the misspecification.
+
+Gaussian baseline console output
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: console
+
+   amplitude = 2.797... ± ...
+   mean      = 0.347... ± ...
+   sigma     = 0.624... ± ...
+   m         = 0.121... ± ...
+   b         = 0.700... ± ...
+   With baseline   chi^2_r = 0.965
+   Without baseline chi^2_r = 14.3
+
+Custom model with multiple starting points
+------------------------------------------
+
+When fitting overlapping peaks, the optimizer can get stuck in a local minimum
+depending on the starting guess.  Run the fit from several starting points, keep
+only the successful, identifiable solutions, and pick the one with the lowest
+reduced χ².
+
+.. code-block:: python
+
+   import numpy as np
+   from labfit import fit
+
+   rng = np.random.default_rng(505)
+   u = np.linspace(-2.0, 3.0, 201)
+   y_true = (
+       2.5 * np.exp(-0.5 * ((u + 0.1) / 0.43) ** 2)
+       + 1.8 * np.exp(-0.5 * ((u - 0.8) / 0.52) ** 2)
+       + 0.06 * u + 0.35
+   )
+   sigma = np.full_like(u, 0.055)
+   y = y_true + rng.normal(0.0, sigma)
+
+   def double_peak(u, A1, c1, w1, A2, c2, w2, m, b):
+       return (A1 * np.exp(-0.5 * ((u - c1) / w1) ** 2)
+               + A2 * np.exp(-0.5 * ((u - c2) / w2) ** 2)
+               + m * u + b)
+
+   # Estimate background from edge points and peak height
+   edge = (u < -1.2) | (u > 2.2)
+   slope, baseline = np.polyfit(u[edge], y[edge], 1)
+   peak_height = float(np.max(y - slope * u - baseline))
+
+   starts = [(-0.35, 0.65, 0.35), (0.0, 1.0, 0.55), (-0.2, 0.9, 0.75)]
+   candidates = []
+   for left, right, width in starts:
+       candidate = fit(
+           u, y, sigma=sigma, model=double_peak, absolute_sigma=True,
+           p0={"A1": 0.7 * peak_height, "c1": left, "w1": width,
+               "A2": 0.5 * peak_height, "c2": right, "w2": width,
+               "m": float(slope), "b": float(baseline)},
+           bounds={"A1": (0, 10), "A2": (0, 10), "c1": (-0.6, 0.25),
+                   "c2": (0.4, 1.5), "w1": (0.15, 1.2), "w2": (0.15, 1.2)},
+       )
+       candidates.append(candidate)
+
+   valid = [r for r in candidates if r.success and r.identifiable]
+   result = min(valid, key=lambda r: r.reduced_chi2)
+   print(f"c1 = {result.params['c1']:.4f} +/- {result.uncertainties['c1']:.4f} nm")
+   print(f"c2 = {result.params['c2']:.4f} +/- {result.uncertainties['c2']:.4f} nm")
+   print(f"reduced chi^2 = {result.reduced_chi2:.4f}")
+
+Custom model console output
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: console
+
+   c1 = -0.0997 +/- 0.0073 nm
+   c2 =  0.8011 +/- 0.0082 nm
+   reduced chi^2 = 0.9714
+
+Generalized least squares with correlated errors
+-------------------------------------------------
+
+Standard least squares assumes independent measurement errors.  When errors are
+correlated (e.g. thermal drift, shared environmental noise), pass a full covariance
+matrix via ``sigma_cov``.  LabFit performs **generalized least squares** (GLS),
+whitening the residuals internally.
+
+.. code-block:: python
+
+   import numpy as np
+   from labfit import fit, plot_fit
+
+   rng = np.random.default_rng(606)
+   x = np.linspace(0, 120, 81)
+   y_true = 12 * (1 - np.exp(-x / 28)) + 21
+
+   # AR(1)-like covariance: correlated_sigma^2 * rho^|i-j| + independent noise
+   index = np.arange(x.size)
+   rho, corr_sigma, indep_sigma = 0.78, 0.20, 0.06
+   covariance = (corr_sigma ** 2 * rho ** np.abs(index[:, None] - index[None, :])
+                 + indep_sigma ** 2 * np.eye(x.size))
+   y = y_true + np.linalg.cholesky(covariance) @ rng.normal(size=x.size)
+
+   # GLS fit using the full measurement covariance
+   result = fit(
+       x, y,
+       sigma_cov=covariance,
+       model="exponential_rise",
+       p0={"amplitude": float(y[-1] - y[0]), "tau": 30.0, "offset": float(y[0])},
+       bounds={"amplitude": (0, 30), "tau": (1, 200), "offset": (10, 30)},
+       absolute_sigma=True,
+   )
+   plot = plot_fit(
+       result,
+       show_ci=True, ci_level=0.95,
+       xlabel="Time (s)", ylabel="Temperature (deg C)",
+       title="Thermal response: generalized least squares",
+   )
+   plot.save("docs/_static/gallery/generalized_least_squares.png")
+   print(result)
+
+.. figure:: _static/gallery/generalized_least_squares.png
+   :alt: Generalized least squares fit of a thermal step response
+   :width: 100%
+
+   The fit accounts for the AR(1)-like covariance structure of the measurement errors.
+   The 95 % confidence band reflects the full correlated uncertainty.
+
+GLS console output
+~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: console
+
+   amplitude = 11.987... +/- ...
+   tau       = 28.07...  +/- ...
+   offset    = 20.97...  +/- ...
+   reduced chi^2 = 0.98...

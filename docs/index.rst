@@ -37,7 +37,6 @@ Core goals:
    :hidden:
 
    quickstart
-   tutorial
    concepts
    least-squares
    fitting-functions
@@ -54,7 +53,7 @@ Quick links:
 
 - **5-minute quickstart** - Get a working fit in 5 minutes: CSV, errors, fit, plot, χ².  :ref:`quickstart`
 
-- **Full laboratory tutorial** - Six worked experiments with new data, executable scripts, and downloadable Markdown, LaTeX and PDF. See :ref:`tutorial`.
+- **Practical tutorial** - Six worked experiments (calibration, decay, peaks, oscillations, GLS) with executable scripts and CSV data.  See ``examples/tutorial/`` in the repository.
 
 - **Concepts** - Diagnostics, reduced χ², and error propagation. :ref:`concepts`
 
@@ -66,7 +65,7 @@ Quick links:
 
 - **Utilities** - CSV/TXT loading and uncertainty helpers. :ref:`utilities`
 
-- **Example gallery** - Simple examples. :ref:`gallery`
+- **Example gallery** - Runnable examples: linear, Gaussian, exponential, confidence bands, error propagation, custom models, GLS, and more. :ref:`gallery`
 
 - **FAQ** - Common pitfalls: correlated errors, bad initial guesses, weighting, and more. :ref:`faq`
 
