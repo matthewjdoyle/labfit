@@ -327,12 +327,7 @@ def make_custom_model() -> None:
     y = y_true + rng.normal(0.0, sigma)
 
     def double_peak(u, A1, c1, w1, A2, c2, w2, m, b):
-        return (
-            A1 * np.exp(-0.5 * ((u - c1) / w1) ** 2)
-            + A2 * np.exp(-0.5 * ((u - c2) / w2) ** 2)
-            + m * u
-            + b
-        )
+        return A1 * np.exp(-0.5 * ((u - c1) / w1) ** 2) + A2 * np.exp(-0.5 * ((u - c2) / w2) ** 2) + m * u + b
 
     edge = (u < -1.2) | (u > 2.2)
     slope, baseline = np.polyfit(u[edge], y[edge], 1)
@@ -388,9 +383,9 @@ def make_generalized_least_squares() -> None:
 
     index = np.arange(x.size)
     rho, corr_sigma, indep_sigma = 0.78, 0.20, 0.06
-    covariance = corr_sigma**2 * rho ** np.abs(
-        index[:, None] - index[None, :]
-    ) + indep_sigma**2 * np.eye(x.size)
+    covariance = corr_sigma**2 * rho ** np.abs(index[:, None] - index[None, :]) + indep_sigma**2 * np.eye(
+        x.size
+    )
     y = y_true + np.linalg.cholesky(covariance) @ rng.normal(size=x.size)
 
     result = fit(

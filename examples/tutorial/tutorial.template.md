@@ -1140,12 +1140,14 @@ plot = plot_fit(result, show_residuals=True, xlabel="Time (s)", ylabel="Signal (
 plot.save("fit.png")
 
 plot = plot_fit(result, show_ci=True, ci_level=0.95)
-plot = plot_fit(result, show_ci=True, prediction=True,
-                ci_level=0.95, prediction_sigma=0.1)
+plot = plot_fit(result, show_ci=True, prediction=True, ci_level=0.95, prediction_sigma=0.1)
 
 value, error = propagate_errors(
-    derived_function, jacobian=gradient_function,
-    covariance=parameter_covariance, parameter_a=a, parameter_b=b,
+    derived_function,
+    jacobian=gradient_function,
+    covariance=parameter_covariance,
+    parameter_a=a,
+    parameter_b=b,
 )
 ~~~
 
