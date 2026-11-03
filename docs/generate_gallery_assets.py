@@ -15,7 +15,8 @@ matplotlib.use("Agg", force=True)
 import matplotlib.pyplot as plt
 import numpy as np
 
-from labfit import Fitter, Series, fit, fit_curve, plot_fit, plot_multi_fit
+from labfit import Fitter, Series, fit, fit_curve, plot_fit
+from labfit.plot import plot_result
 
 OUT = ROOT / "_static" / "gallery"
 
@@ -79,9 +80,7 @@ def make_multi_fit() -> None:
         p0={"amplitude": 1.0, "damping": 0.2, "f": 1.0, "phase": 0.0},
     )
     results = fitter.fit_multi([s1, s2])
-    plot = plot_multi_fit(
-        results, [s1, s2], title="Damped oscillator comparison", xlabel="time / s", ylabel="signal"
-    )
+    plot = plot_result(results, title="Damped oscillator comparison", xlabel="time / s", ylabel="signal")
     save_plot(plot, "damped_oscillators")
 
 
@@ -169,9 +168,8 @@ def make_model_comparison() -> None:
     result_gaussian = fit(x, y, model="gaussian", sigma=sigma, label="data")
     result_lorentzian = fit(x, y, model="lorentzian", sigma=sigma)
 
-    # Avoid plotting the data markers twice — only the Gaussian result
-    # carries the series so the data points appear once.
-    result_lorentzian.series = None
+    # Both fits use the same observations and uncertainty.
+    result_lorentzian.series = result_gaussian.series
 
     plot = plot_fit(
         [result_gaussian, result_lorentzian],

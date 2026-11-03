@@ -440,6 +440,7 @@ class Plotter:
     series: list[DataSeries] = field(default_factory=list)
     figure: Any = None
     axes: Any = None
+    _save_defaults: dict[str, Any] = field(default_factory=dict, init=False, repr=False, compare=False)
 
     def add_series(self, *args: DataSeries | MaybeArray, **kwargs: Any) -> Plotter:
         if len(args) == 1 and isinstance(args[0], DataSeries):
@@ -462,7 +463,7 @@ class Plotter:
             raise ValueError("Nothing has been plotted yet")
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        self.figure.savefig(str(path), **kwargs)
+        self.figure.savefig(str(path), **(self._save_defaults | kwargs))
         return path
 
     def __call__(self, result: ResultInput = None, **kwargs: Any) -> Plotter:

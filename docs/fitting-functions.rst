@@ -30,6 +30,28 @@ Entry points
 
 .. autofunction:: labfit.plot_residuals
 
+Plot styles
+-----------
+
+New LabFit figures use a clean frame with bottom and left ticks.
+Autoscaled axes begin at a labeled tick and include the full plotted
+range. An axis can begin at zero when its data starts there.
+Pass ``style="publication"`` for a boxed frame with inward ticks, or
+``style=None`` to use the active Matplotlib theme. These options apply
+only to the figure being created. Axes supplied by the caller retain
+their frame and typography.
+
+Observations, the fit curve, residuals, and interval fills share the
+dataset colour. For a model comparison on the same axes, give each
+result the same ``DataSeries`` instance as its ``series`` to draw the
+observations once and distinguish the fits by line style. In
+:func:`labfit.plot_multi_fit`, use ``sharey=True`` to match vertical scales
+within each row when comparing datasets with the same units.
+
+``Plotter.save()`` uses 300 dpi and a tight bounding box for figures
+created with a LabFit preset. Pass ``dpi`` or ``bbox_inches`` to override
+either setting.
+
 Built-in model functions
 ------------------------
 

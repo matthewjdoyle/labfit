@@ -29,7 +29,7 @@ public API you would use in your own analysis.
       :link-type: ref
       :img-top: _static/gallery/damped_oscillators.png
 
-      Simultaneous multi-dataset fitting with individual residual subplots.
+      Overlay both trials’ measurements and fitted curves on shared axes.
 
    .. grid-item-card:: Bimodal Gaussian peaks
       :link: gallery-bimodal-gaussian
@@ -168,13 +168,15 @@ Gaussian fit console output
 Multi-series damped oscillator comparison
 -----------------------------------------
 
-This example shows :func:`labfit.fit_multi` and :func:`labfit.plot_multi_fit` on
-paired experimental series.
+Fit two experimental series with :meth:`labfit.Fitter.fit_multi`, then use
+``labfit.plot.plot_result`` to overlay the measurements and fitted curves
+on shared time and signal axes.
 
 .. code-block:: python
 
    import numpy as np
-   from labfit import Fitter, Series, plot_multi_fit
+   from labfit import Fitter, Series
+   from labfit.plot import plot_result
 
    def damped_oscillator(t, amplitude, damping, f, phase):
        return amplitude * np.exp(-damping * t) * np.cos(2.0 * np.pi * f * t + phase)
@@ -187,14 +189,14 @@ paired experimental series.
 
    fitter = Fitter(model=damped_oscillator, p0={"amplitude": 1.0, "damping": 0.2, "f": 1.0, "phase": 0.0})
    results = fitter.fit_multi([s1, s2])
-   plot = plot_multi_fit(results, [s1, s2], title="Damped oscillator comparison")
+   plot = plot_result(results, title="Damped oscillator comparison", xlabel="time / s", ylabel="signal")
    plot.save("docs/_static/gallery/damped_oscillators.png")
 
 .. figure:: _static/gallery/damped_oscillators.png
-   :alt: Damped oscillator comparison grid
+   :alt: Measurements and fitted curves for both oscillator trials on shared axes
    :width: 100%
 
-   Side-by-side fit comparison with residual panels for each series.
+   Measurements and fitted curves for Trial 1 and Trial 2 on the same axes.
 
 Damped oscillator console output
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -389,9 +391,8 @@ centre but its heavier tails diverge from the data in the wings, giving
    # Close but wrong — Lorentzian has heavier tails
    result_lorentzian = fit(x, y, model="lorentzian", sigma=sigma)
 
-   # Prevent the data markers from being drawn twice — only the
-   # Gaussian result carries the series so the points appear once.
-   result_lorentzian.series = None
+   # Share the series to draw the observations once and vary the fit line styles.
+   result_lorentzian.series = result_gaussian.series
 
    plot = plot_fit(
        [result_gaussian, result_lorentzian],

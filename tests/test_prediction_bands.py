@@ -176,7 +176,7 @@ def test_public_plot_renders_analytical_prediction_endpoints():
         show_residuals=False,
     )
     try:
-        band = next(c for c in plotter.axes.collections if c.get_label() == "68% prediction")
+        band = next(c for c in plotter.axes.collections if c.get_label() == "68% prediction interval")
         vertices = band.get_paths()[0].vertices
         expected_mean = 1.2 * xs + 0.9
         expected_width = np.sqrt(0.25 * (0.2 * xs**2 - 0.2 * xs + 0.3) + (0.2 + 0.1 * np.abs(xs)) ** 2)
@@ -213,7 +213,7 @@ def test_documented_prediction_example_runs(tmp_path, monkeypatch):
         output = tmp_path / "prediction-band.png"
         assert output.exists() and output.stat().st_size > 0
         labels = namespace["plot"].axes[0].get_legend_handles_labels()[1]
-        assert "95% prediction" in labels
+        assert "95% prediction interval" in labels
     finally:
         if "plot" in namespace:
             plt.close(namespace["plot"].figure)

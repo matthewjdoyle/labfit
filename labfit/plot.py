@@ -1,13 +1,20 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
 from numbers import Real
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.artist import Artist
 from matplotlib.axes import Axes
+from matplotlib.backend_bases import RendererBase
+from matplotlib.collections import LineCollection
 from matplotlib.figure import Figure
+from matplotlib.lines import Line2D
+from matplotlib.ticker import AutoLocator
+from scipy.spatial import cKDTree
 from scipy.stats import norm
 
 from .types import AsymmetricError, DataSeries, FitResult, MaybeArray, Plotter, ResultInput, SeriesInput
@@ -64,7 +71,59 @@ _PUBLICATION_RC = {
     "lines.markersize": 5.5,
 }
 
+_DEFAULT_RC = {
+    **_PUBLICATION_RC,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "xtick.direction": "out",
+    "xtick.top": False,
+    "ytick.direction": "out",
+    "ytick.right": False,
+}
+_Style = Literal["default", "publication"] | None
+_FIT_LINESTYLES = ("-", "--", "-.", ":")
+_RESIDUAL_ZERO_LABEL = "_labfit_residual_zero"
 _style_applied = False
+
+
+def _style_context(style: _Style, *, owns_figure: bool) -> AbstractContextManager[None]:
+    if style not in ("default", "publication", None):
+        raise ValueError("style must be 'default', 'publication', or None")
+    if not owns_figure or style is None:
+        return nullcontext()
+    return plt.rc_context(_DEFAULT_RC if style == "default" else _PUBLICATION_RC)
+
+
+class _AlignedLocator(AutoLocator):
+    def __init__(self) -> None:
+        super().__init__()
+        self._aligned_ticks: list[float] = []
+
+    def view_limits(self, dmin: float, dmax: float) -> tuple[float, float]:
+        self._aligned_ticks = list(map(float, self.tick_values(dmin, dmax)))
+        return self._aligned_ticks[0], self._aligned_ticks[-1]
+
+    def __call__(self) -> list[float]:
+        assert self.axis is not None
+        lower, upper = sorted(map(float, self.axis.get_view_interval()))
+        if self._aligned_ticks and (lower, upper) == (self._aligned_ticks[0], self._aligned_ticks[-1]):
+            return self._aligned_ticks
+        return list(map(float, super().__call__()))
+
+
+def _align_axis_limits(*axes: Axes) -> None:
+    for ax in axes:
+        ax.xaxis.set_major_locator(_AlignedLocator())
+        ax.yaxis.set_major_locator(_AlignedLocator())
+        # Allow the autoscale margin to stop at zero for data starting there.
+        cast(list[float], ax.patch.sticky_edges.x).append(0.0)
+        cast(list[float], ax.patch.sticky_edges.y).append(0.0)
+
+
+def _set_save_defaults(plotter: Plotter, style: _Style) -> None:
+    plotter._save_defaults = (
+        {} if style is None else {"dpi": _PUBLICATION_RC["savefig.dpi"], "bbox_inches": "tight"}
+    )
 
 
 def use_publication_style() -> None:
@@ -119,7 +178,97 @@ def _residuals(result: FitResult) -> np.ndarray | None:
     return result.y - result.predict(result.x)
 
 
-def _plot_series(ax: Axes, series: DataSeries, index: int) -> str:
+class _MarkerSizing(Artist):
+    """Size LabFit markers before the other artists on this axes draw."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.set_zorder(float("-inf"))
+        self.set_in_layout(False)
+        self.markers: list[tuple[Line2D, float, LineCollection | None]] = []
+
+    def draw(self, renderer: RendererBase) -> None:
+        ax = self.axes
+        assert ax is not None
+        pixels_per_point = cast(float, renderer.points_to_pixels(1))
+        box = ax.bbox
+        panel_limit = min(box.width, box.height) / (25 * pixels_per_point)
+        visible_markers = []
+        for line, standard_size, bars in self.markers:
+            if line.axes is not ax or not line.get_visible():
+                continue
+            centres = line.get_transform().transform(line.get_xydata())
+            visible = (
+                np.isfinite(centres).all(axis=1)
+                & (centres[:, 0] >= box.xmin)
+                & (centres[:, 0] <= box.xmax)
+                & (centres[:, 1] >= box.ymin)
+                & (centres[:, 1] <= box.ymax)
+            )
+            visible_markers.append((line, standard_size, bars, centres, visible))
+        if not visible_markers:
+            return
+
+        visible_centres = np.concatenate([centres[visible] for _, _, _, centres, visible in visible_markers])
+        distinct = np.unique(visible_centres, axis=0)
+        outer_limit = panel_limit
+        if len(distinct) > 1:
+            distances, _ = cKDTree(distinct).query(distinct, k=2)
+            spacing = float(np.quantile(distances[:, 1], 0.25)) / pixels_per_point
+            outer_limit = min(outer_limit, 0.7 * spacing)
+
+        for line, standard_size, bars, centres, visible in visible_markers:
+            limit = outer_limit
+            if bars is not None and bars.axes is ax and bars.get_visible():
+                error_limit = _error_marker_limit(bars, centres, visible, pixels_per_point)
+                limit = min(limit, error_limit)
+            size = max(2.5, min(standard_size, limit - line.get_markeredgewidth()))
+            if line.get_markersize() != size:
+                line.set_markersize(size)
+        self.stale = False
+
+
+def _error_marker_limit(
+    bars: LineCollection, centres: np.ndarray, visible: np.ndarray, pixels_per_point: float
+) -> float:
+    segments = [np.asarray(path.vertices) for path in bars.get_paths()]
+    indices = [
+        i
+        for i, (segment, shown) in enumerate(zip(segments, visible, strict=False))
+        if shown and segment.shape == (2, 2)
+    ]
+    if not indices:
+        return float("inf")
+    endpoints = np.stack([segments[i] for i in indices])
+    display = bars.get_transform().transform(endpoints.reshape(-1, 2)).reshape(-1, 2, 2)
+    lengths = np.linalg.norm(display - centres[indices, None, :], axis=2)
+    lengths[~np.isfinite(lengths) | (lengths <= 0)] = np.inf
+    shorter_arms = lengths.min(axis=1)
+    valid_arms = shorter_arms[np.isfinite(shorter_arms)]
+    if not len(valid_arms):
+        return float("inf")
+    return 2 * (float(np.quantile(valid_arms, 0.25)) / pixels_per_point - 1)
+
+
+def _size_marker(ax: Axes, line: Line2D, bars: LineCollection | None = None) -> None:
+    sizing = next((artist for artist in ax.artists if isinstance(artist, _MarkerSizing)), None)
+    if sizing is None:
+        sizing = _MarkerSizing()
+        ax.add_artist(sizing)
+    sizing.markers.append((line, line.get_markersize(), bars))
+
+
+def _plot_legend(ax: Axes) -> None:
+    # Matplotlib copies marker properties when it builds the legend.
+    for artist in ax.artists:
+        if isinstance(artist, _MarkerSizing):
+            for line, standard_size, _ in artist.markers:
+                if line.axes is ax:
+                    line.set_markersize(standard_size)
+    ax.legend(loc="best")
+
+
+def _plot_series(ax: Axes, series: DataSeries, index: int, *, color: str | None = None) -> None:
     """Plot data series with error bars and caps using Okabe-Ito colours."""
     if series.sigma_cov is not None:
         yerr = np.sqrt(np.diag(series.sigma_cov))
@@ -130,41 +279,39 @@ def _plot_series(ax: Axes, series: DataSeries, index: int) -> str:
     else:
         yerr = series.effective_sigma
     label = _series_label(series, index)
-    color = _OKABE_ITO[index % len(_OKABE_ITO)]
+    if color is None:
+        color = _OKABE_ITO[index % len(_OKABE_ITO)]
     if yerr is None:
-        (line,) = ax.plot(series.x, series.y, "o", ms=4.0, color=color, zorder=2, label=label)
-        return color
+        (marker,) = ax.plot(series.x, series.y, "o", ms=4.0, mfc=color, color=color, zorder=4, label=label)
+        _size_marker(ax, marker)
+        return
     container = ax.errorbar(
         series.x,
         series.y,
         yerr=yerr,
         fmt="o",
         color=color,
+        markerfacecolor=color,
         markersize=4.0,
-        capsize=3.5,
-        capthick=1.2,
-        elinewidth=1.2,
+        capsize=2.0,
+        capthick=0.8,
+        elinewidth=0.8,
         zorder=2,
         label=label,
     )
-    # Fix error bar lines z-order — matplotlib internally offsets them
-    # to zorder-0.1, which puts them behind the markers and caps
-    if len(container.lines) > 2:
-        barlinecol = container.lines[2]
-        if hasattr(barlinecol, "set_zorder"):
-            barlinecol.set_zorder(2)
-    return color
+    marker_line, _, (bars,) = container.lines
+    assert marker_line is not None
+    marker_line.set_zorder(4)
+    _size_marker(ax, marker_line, bars)
 
 
-def _plot_fit_line(ax: Axes, result: FitResult, index: int) -> str | None:
+def _plot_fit_line(ax: Axes, result: FitResult, index: int, color: str, *, linestyle: str = "-") -> None:
     if result.x is None or result.y is None:
-        return None
-    # Use a visibly darker line — offset palette by 1 so the fit line
-    # contrasts with the data markers while staying colour-blind friendly
-    color = _OKABE_ITO[(index + 1) % len(_OKABE_ITO)]
+        return
     xs = np.linspace(float(np.min(result.x)), float(np.max(result.x)), 400)
-    (line,) = ax.plot(xs, result.predict(xs), color=color, lw=2.5, zorder=3, label=_fit_label(result, index))
-    return color
+    ax.plot(
+        xs, result.predict(xs), color=color, ls=linestyle, lw=1.7, zorder=3, label=_fit_label(result, index)
+    )
 
 
 _PredictionSigma = MaybeArray | Callable[[np.ndarray], MaybeArray] | None
@@ -282,19 +429,20 @@ def _plot_ci_band(
     if band is None:
         return
     lower, upper = band
-    label = f"{ci_level * 100:.0f}% {'prediction' if prediction else 'confidence'}"
-    ax.fill_between(xs, lower, upper, color=color, alpha=0.18, zorder=2, label=label)
+    interval = "prediction interval" if prediction else "confidence interval for the mean"
+    label = f"{ci_level:.0%} {interval}"
+    ax.fill_between(xs, lower, upper, color=color, alpha=0.18, zorder=1, label=label)
 
 
-def _plot_residual_axis(axr: Axes, result: FitResult, color: str | None = None) -> None:
+def _plot_residual_axis(axr: Axes, result: FitResult, color: str) -> None:
     residuals = _residuals(result)
     if residuals is None:
         return
-    if color is None:
-        color = _OKABE_ITO[1]
-    axr.axhline(0.0, color="0.35", lw=1.0, ls="--")
+    if not any(line.get_label() == _RESIDUAL_ZERO_LABEL for line in axr.lines):
+        axr.axhline(0.0, color="0.35", lw=1.0, ls="--", zorder=1, label=_RESIDUAL_ZERO_LABEL)
     assert result.x is not None
-    axr.plot(result.x, residuals, marker="o", ls="none", ms=3.5, color=color)
+    (marker,) = axr.plot(result.x, residuals, marker="o", ls="none", ms=3.5, color=color)
+    _size_marker(axr, marker)
     axr.set_ylabel("residuals")
 
 
@@ -312,7 +460,7 @@ def _style_axes(
 
 
 def _create_single_figure(
-    *, show_residuals: bool, figsize: tuple[float, float]
+    *, show_residuals: bool, figsize: tuple[float, float], style: _Style
 ) -> tuple[Figure, Axes, Axes | None]:
     if show_residuals:
         fig, (ax, axr) = plt.subplots(
@@ -322,28 +470,26 @@ def _create_single_figure(
             figsize=(figsize[0], figsize[1] * 1.35),
             gridspec_kw={"height_ratios": [3, 1], "hspace": 0.06},
         )
+        if style == "default":
+            _align_axis_limits(ax, axr)
         return fig, ax, axr
     fig, ax = plt.subplots(figsize=figsize)
+    if style == "default":
+        _align_axis_limits(ax)
     return fig, ax, None
 
 
-def _single_axes_from_existing(
-    ax: Axes, *, show_residuals: bool, figsize: tuple[float, float]
-) -> tuple[Figure, Axes, Axes | None]:
+def _single_axes_from_existing(ax: Axes, *, show_residuals: bool) -> tuple[Figure, Axes, Axes | None]:
     fig = cast(Figure, ax.figure)
     if not show_residuals:
         return fig, ax, None
-    try:
-        spec = ax.get_subplotspec()
-    except Exception:
-        return _create_single_figure(show_residuals=show_residuals, figsize=figsize)
-    if spec is None:
-        return _create_single_figure(show_residuals=show_residuals, figsize=figsize)
-    ax.remove()
+    spec = ax.get_subplotspec()
+    assert spec is not None
     inner = spec.subgridspec(2, 1, height_ratios=[3, 1], hspace=0.06)
-    ax_main = fig.add_subplot(inner[0])
-    ax_res = fig.add_subplot(inner[1], sharex=ax_main)
-    return fig, ax_main, ax_res
+    ax.set_subplotspec(inner[0])
+    axr = fig.add_subplot(inner[1], sharex=ax)
+    ax.tick_params(labelbottom=False)
+    return fig, ax, axr
 
 
 def _plot_single_fit(
@@ -361,6 +507,7 @@ def _plot_single_fit(
     ylabel: str = "y",
     figsize: tuple[float, float] = (7, 4),
     plotter: Plotter | None = None,
+    style: _Style = "default",
 ) -> Plotter:
     series = data_series
     if series is None:
@@ -380,31 +527,36 @@ def _plot_single_fit(
         xs_band = np.linspace(float(np.min(result.x)), float(np.max(result.x)), 200)
         band = _confidence_band(result, xs_band, ci_level, prediction, prediction_sigma)
 
-    if ax is None:
-        fig, ax_main, ax_res = _create_single_figure(show_residuals=show_residuals, figsize=figsize)
-    else:
-        fig, ax_main, ax_res = _single_axes_from_existing(ax, show_residuals=show_residuals, figsize=figsize)
+    owns_figure = ax is None or (show_residuals and ax.get_subplotspec() is None)
+    with _style_context(style, owns_figure=owns_figure):
+        if owns_figure:
+            fig, ax_main, ax_res = _create_single_figure(
+                show_residuals=show_residuals, figsize=figsize, style=style
+            )
+        else:
+            assert ax is not None
+            fig, ax_main, ax_res = _single_axes_from_existing(ax, show_residuals=show_residuals)
 
-    plotter = plotter or Plotter()
-    plotter.figure = fig
-    plotter.axes = (ax_main, ax_res) if ax_res is not None else ax_main
-    plotter.series = [series]
+        plotter = plotter or Plotter()
+        plotter.figure = fig
+        plotter.axes = (ax_main, ax_res) if ax_res is not None else ax_main
+        plotter.series = [series]
+        _set_save_defaults(plotter, style if owns_figure else None)
 
-    color = _plot_series(ax_main, series, 0)
-    fit_color = _plot_fit_line(ax_main, result, 0)
-    if fit_color is None:
-        fit_color = color
-    if xs_band is not None:
-        _plot_ci_band(ax_main, xs_band, band, fit_color, ci_level, prediction)
-    if ax_res is not None:
-        _plot_residual_axis(ax_res, result, fit_color)
-    _style_axes(ax_main, ax_res, xlabel=xlabel, ylabel=ylabel, title=title)
-    handles, labels = ax_main.get_legend_handles_labels()
-    if handles:
-        ax_main.legend(loc="best")
-    if ax_res is None:
-        fig.tight_layout()
-    return plotter
+        color = _OKABE_ITO[0]
+        _plot_series(ax_main, series, 0)
+        _plot_fit_line(ax_main, result, 0, color)
+        if xs_band is not None:
+            _plot_ci_band(ax_main, xs_band, band, color, ci_level, prediction)
+        if ax_res is not None:
+            _plot_residual_axis(ax_res, result, color)
+        _style_axes(ax_main, ax_res, xlabel=xlabel, ylabel=ylabel, title=title)
+        handles, labels = ax_main.get_legend_handles_labels()
+        if handles:
+            _plot_legend(ax_main)
+        if owns_figure and ax_res is None:
+            fig.tight_layout()
+        return plotter
 
 
 def _multi_layout(count: int, layout: str) -> tuple[int, int]:
@@ -423,6 +575,8 @@ def plot_multi_fit(
     title: str | None = None,
     xlabel: str = "x",
     ylabel: str = "y",
+    sharey: bool = False,
+    style: _Style = "default",
 ) -> Plotter:
     """Compare multiple fits in a side-by-side grid.
 
@@ -444,12 +598,16 @@ def plot_multi_fit(
         Overall figure title.
     xlabel, ylabel : str
         Axis labels shared by all panels.
+    sharey : bool, default False
+        Match y-limits within the fit row and separately within the residual row.
+    style : {"default", "publication", None}, optional
+        Theme for new figures. The publication preset uses a boxed frame.
+        Pass None to use the active Matplotlib theme.
 
     Returns
     -------
     Plotter
     """
-    use_publication_style()
     results = _as_results(results)
     series_items = _as_series(series_list)
     if series_items is None:
@@ -457,67 +615,54 @@ def plot_multi_fit(
     if len(results) != len(series_items):
         raise ValueError("results and series_list must have the same length")
 
-    nrows, ncols = _multi_layout(len(results), layout)
-    fig, axes = plt.subplots(
-        nrows,
-        ncols,
-        sharex="col",
-        figsize=(figsize[0] * ncols, figsize[1] * nrows),
-        gridspec_kw={"height_ratios": [3, 1], "hspace": 0.08, "wspace": 0.25},
-    )
-    axes = np.asarray(axes)
-    if axes.ndim == 1:
-        axes = axes[:, np.newaxis]
+    with _style_context(style, owns_figure=True):
+        nrows, ncols = _multi_layout(len(results), layout)
+        fig, axes = plt.subplots(
+            nrows,
+            ncols,
+            sharex="col",
+            sharey="row" if sharey else False,
+            squeeze=False,
+            layout="constrained",
+            figsize=(figsize[0] * ncols, figsize[1] * nrows),
+            gridspec_kw={"height_ratios": [3, 1], "hspace": 0.08, "wspace": 0.25},
+        )
+        if style == "default":
+            _align_axis_limits(*axes.flat)
+        if title:
+            fig.suptitle(title)
+        fig.supxlabel(xlabel)
 
-    for idx, (result, series) in enumerate(zip(results, series_items, strict=True)):
-        ax = axes[0, idx]
-        axr = axes[1, idx]
-        color = _plot_series(ax, series, idx)
-        fit_color = _plot_fit_line(ax, result, idx)
-        if fit_color is None:
-            fit_color = color
-        _plot_residual_axis(axr, result, fit_color)
-        subtitle = _series_label(series, idx)
-        if title and idx == 0:
-            ax.set_title(title)
-        elif title is None:
-            ax.set_title(subtitle)
-        else:
-            ax.set_title(f"{subtitle}")
-        _style_axes(ax, axr, xlabel=xlabel, ylabel=ylabel)
-        handles, labels = ax.get_legend_handles_labels()
-        if handles:
-            ax.legend(loc="best")
+        dataset_indices: dict[int, int] = {}
+        for idx, (result, series) in enumerate(zip(results, series_items, strict=True)):
+            ax = axes[0, idx]
+            axr = axes[1, idx]
+            color_index = dataset_indices.setdefault(id(series), idx)
+            color = _OKABE_ITO[color_index % len(_OKABE_ITO)]
+            _plot_series(ax, series, idx, color=color)
+            _plot_fit_line(ax, result, idx, color)
+            _plot_residual_axis(axr, result, color)
+            ax.set_title(_series_label(series, idx))
+            ax.set_ylabel(ylabel if idx == 0 else "")
+            axr.set_ylabel("residuals" if idx == 0 else "")
+            handles, labels = ax.get_legend_handles_labels()
+            if handles:
+                _plot_legend(ax)
 
-    plotter = Plotter(series=series_items, figure=fig, axes=axes)
-    return plotter
-
-
-def _overlay_on_axes(
-    ax: Axes, axr: Axes | None, result: FitResult, series: DataSeries | None, index: int
-) -> None:
-    color = None
-    if series is not None:
-        color = _plot_series(ax, series, index)
-    fit_color = _plot_fit_line(ax, result, index)
-    if fit_color is None:
-        fit_color = color
-    if axr is not None:
-        _plot_residual_axis(axr, result, fit_color)
+        plotter = Plotter(series=series_items, figure=fig, axes=axes)
+        _set_save_defaults(plotter, style)
+        return plotter
 
 
 def _add_result_axes(ax: Axes, result: FitResult, show_residuals: bool = False) -> Axes:
-    series = result.series
-    color = None
-    if series is not None:
-        color = _plot_series(ax, series, 0)
-    fit_color = _plot_fit_line(ax, result, 0)
-    if fit_color is None:
-        fit_color = color
-    ax.legend(loc="best")
+    color = _OKABE_ITO[0]
+    if result.series is not None:
+        _plot_series(ax, result.series, 0)
+    _plot_fit_line(ax, result, 0, color)
+    _plot_legend(ax)
     if show_residuals:
         ax2 = ax.twinx()
-        _plot_residual_axis(ax2, result, fit_color)
+        _plot_residual_axis(ax2, result, color)
         return ax2
     return ax
 
@@ -531,13 +676,16 @@ def plot_result(
     xlabel: str = "x",
     ylabel: str = "y",
     figsize: tuple[float, float] = (7, 4),
+    style: _Style = "default",
     **kwargs: Any,
 ) -> Plotter:
     """Plot fit results or raw data series on a single set of axes.
 
     Use this when you want to overlay several fits or plot raw series
     without a fit. Pass a sequence of :class:`~labfit.FitResult` objects
-    to overlay them on the same axes.
+    to overlay them on the same axes. Results referencing the same DataSeries
+    share one set of observation markers and use different fit line styles.
+    Marker sizes adapt to the visible point spacing and error bars on each draw.
 
     Parameters
     ----------
@@ -554,60 +702,75 @@ def plot_result(
         Axis labels.
     figsize : tuple, default ``(7, 4)``
         Figure dimensions in inches.
+    style : {"default", "publication", None}, optional
+        Theme for new figures. The publication preset uses a boxed frame.
+        Pass None to use the active Matplotlib theme.
 
     Returns
     -------
     Plotter
         Container with the figure, axes, and a ``.save(path)`` method.
     """
-    use_publication_style()
     results = _as_results(result)
     plotter = plotter or Plotter()
 
-    if plotter.figure is None:
-        if show_residuals:
-            fig, ax, axr = _create_single_figure(show_residuals=True, figsize=figsize)
+    owns_figure = plotter.figure is None
+    with _style_context(style, owns_figure=owns_figure):
+        if owns_figure:
+            fig, ax, axr = _create_single_figure(show_residuals=show_residuals, figsize=figsize, style=style)
+            plotter.figure = fig
+            _set_save_defaults(plotter, style)
+            plotter.axes = (ax, axr) if axr is not None else ax
         else:
-            fig, ax, axr = _create_single_figure(show_residuals=False, figsize=figsize)
-        plotter.figure = fig
-        plotter.axes = (ax, axr) if axr is not None else ax
-    else:
-        fig = plotter.figure
-        axes = plotter.axes
-        if isinstance(axes, tuple):
-            ax = axes[0]
-            axr = axes[1]
-        elif isinstance(axes, np.ndarray) and axes.ndim >= 2:
-            ax = axes[0, 0]
-            axr = axes[1, 0] if axes.shape[0] > 1 else None
-        else:
-            ax = axes
-            axr = None
+            fig = plotter.figure
+            axes = plotter.axes
+            if isinstance(axes, tuple):
+                ax = axes[0]
+                axr = axes[1]
+            elif isinstance(axes, np.ndarray) and axes.ndim >= 2:
+                ax = axes[0, 0]
+                axr = axes[1, 0] if axes.shape[0] > 1 else None
+            else:
+                ax = axes
+                axr = None
 
-    if not results and plotter.series:
-        for idx, series_item in enumerate(plotter.series):
-            _plot_series(ax, series_item, idx)
+        if not results and plotter.series:
+            for idx, series_item in enumerate(plotter.series):
+                _plot_series(ax, series_item, idx)
+            handles, labels = ax.get_legend_handles_labels()
+            if handles:
+                _plot_legend(ax)
+            _style_axes(ax, axr, xlabel=xlabel, ylabel=ylabel, title=title)
+            if owns_figure and axr is None:
+                fig.tight_layout()
+            return plotter
+
+        datasets: dict[int, tuple[int, int]] = {}
+        for idx, result_item in enumerate(results):
+            series = result_item.series
+            if series is None and idx < len(plotter.series):
+                series = plotter.series[idx]
+            color_index, model_index = idx, 0
+            if series is not None:
+                key = id(series)
+                if key in datasets:
+                    color_index, model_index = datasets[key]
+                else:
+                    _plot_series(ax, series, color_index)
+                datasets[key] = (color_index, model_index + 1)
+            color = _OKABE_ITO[color_index % len(_OKABE_ITO)]
+            linestyle = _FIT_LINESTYLES[model_index % len(_FIT_LINESTYLES)]
+            _plot_fit_line(ax, result_item, idx, color, linestyle=linestyle)
+            if show_residuals and axr is not None:
+                _plot_residual_axis(axr, result_item, color)
+
+        _style_axes(ax, axr if show_residuals else None, xlabel=xlabel, ylabel=ylabel, title=title)
         handles, labels = ax.get_legend_handles_labels()
         if handles:
-            ax.legend(loc="best")
-        _style_axes(ax, axr, xlabel=xlabel, ylabel=ylabel, title=title)
-        if axr is None:
+            _plot_legend(ax)
+        if owns_figure and not show_residuals:
             fig.tight_layout()
         return plotter
-
-    for idx, result_item in enumerate(results):
-        series = result_item.series
-        if series is None and idx < len(plotter.series):
-            series = plotter.series[idx]
-        _overlay_on_axes(ax, axr if show_residuals else None, result_item, series, idx)
-
-    _style_axes(ax, axr if show_residuals else None, xlabel=xlabel, ylabel=ylabel, title=title)
-    handles, labels = ax.get_legend_handles_labels()
-    if handles:
-        ax.legend(loc="best")
-    if not show_residuals:
-        fig.tight_layout()
-    return plotter
 
 
 def plot_fit(
@@ -620,6 +783,7 @@ def plot_fit(
     ci_level: float = 0.68,
     prediction: bool = False,
     prediction_sigma: _PredictionSigma = None,
+    style: _Style = "default",
     **kwargs: Any,
 ) -> Plotter:
     """Plot a single fit result with its data and residuals.
@@ -661,6 +825,9 @@ def plot_fit(
         Plot title.
     xlabel, ylabel : str
         Axis labels.
+    style : {"default", "publication", None}, optional
+        Theme for new figures. The publication preset uses a boxed frame.
+        Pass None to use the active Matplotlib theme.
 
     Returns
     -------
@@ -669,12 +836,11 @@ def plot_fit(
     ci_level = _validate_ci_level(ci_level)
     if prediction_sigma is not None and not (show_ci and prediction):
         raise ValueError("prediction_sigma requires show_ci=True and prediction=True")
-    use_publication_style()
     results = _as_results(result)
     if len(results) != 1:
         if show_ci:
             raise ValueError("Confidence and prediction bands require a single FitResult")
-        return plot_result(result=result, show_residuals=show_residuals, **kwargs)
+        return plot_result(result=result, show_residuals=show_residuals, style=style, **kwargs)
     return _plot_single_fit(
         results[0],
         data_series=data_series,
@@ -684,6 +850,7 @@ def plot_fit(
         ci_level=ci_level,
         prediction=prediction,
         prediction_sigma=prediction_sigma,
+        style=style,
         **kwargs,
     )
 
