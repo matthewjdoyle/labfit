@@ -44,6 +44,37 @@ def make_linear_fit() -> None:
     save_plot(plot, "linear_fit")
 
 
+def make_plot_customisation() -> None:
+    rng = np.random.default_rng(20240606)
+    x = np.linspace(0.0, 8.0, 30)
+    sigma = 0.10 + 0.02 * (1.0 + np.sin(x))
+    y = 1.85 * x - 0.65 + rng.normal(0.0, sigma)
+
+    result = fit_curve("linear", x, y, sigma, label="Measurements")
+    plot = plot_fit(
+        result, show_residuals=False, title="Customised linear fit",
+        xlabel="x", ylabel="Signal",
+    )
+    ax = plot.axes
+    handles, labels = ax.get_legend_handles_labels()
+    artists = dict(zip(labels, handles))
+
+    # The measurement handle contains the markers, caps and error bars.
+    markers, caps, bars = artists["Measurements"].lines
+    teal = "#00796b"
+    markers.set(marker="D", markerfacecolor="none", markeredgecolor=teal)
+    for cap in caps:
+        cap.set_markeredgecolor(teal)
+    for bar in bars:
+        bar.set_color(teal)
+
+    artists["fit: linear"].set(color="#c45100", linestyle="--", linewidth=2)
+    ax.spines["top"].set_visible(True)
+    ax.spines["right"].set_visible(True)
+    ax.legend(title="Linear fit", loc="upper left", frameon=True)
+    save_plot(plot, "plot_customisation")
+
+
 def make_gaussian_fit() -> None:
     rng = np.random.default_rng(20240607)
     x = np.linspace(-5.0, 5.0, 260)
@@ -409,6 +440,7 @@ def make_generalized_least_squares() -> None:
 
 if __name__ == "__main__":
     make_linear_fit()
+    make_plot_customisation()
     make_gaussian_fit()
     make_multi_fit()
     make_bimodal_gaussian()

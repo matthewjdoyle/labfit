@@ -17,6 +17,14 @@ public API you would use in your own analysis.
 
       Core least-squares workflow with 1-σ uncertainties and residual analysis.
 
+   .. grid-item-card:: Customising a fit plot
+      :link: gallery-plot-customisation
+      :link-type: ref
+      :img-top: _static/gallery/plot_customisation.png
+      :img-alt: Open teal diamonds with error bars, a dashed orange fit line, and a framed legend
+
+      Change marker shapes, colours, line styles and the legend after plotting.
+
    .. grid-item-card:: Gaussian peak fit
       :link: gallery-gaussian
       :link-type: ref
@@ -125,6 +133,58 @@ Linear fit console output
    slope = 1.860589 ± 0.008830
    intercept = -0.694920 ± 0.041056
    reduced chi^2 = 0.788588
+
+.. _gallery-plot-customisation:
+
+Customising a fit plot
+----------------------
+
+With ``show_residuals=False``, ``plot.axes`` is the Matplotlib axes for the
+fit. Find the artists by their legend labels, then use Matplotlib's setters
+to change how the measurements and fitted line look. Set the top and right
+spines visible to restore those edges of the plot. Rebuild the legend after
+editing the artists so it shows the updated styles.
+
+.. code-block:: python
+
+   import numpy as np
+   from labfit import fit_curve, plot_fit
+
+   rng = np.random.default_rng(20240606)
+   x = np.linspace(0.0, 8.0, 30)
+   sigma = 0.10 + 0.02 * (1.0 + np.sin(x))
+   y = 1.85 * x - 0.65 + rng.normal(0.0, sigma)
+
+   result = fit_curve("linear", x, y, sigma, label="Measurements")
+   plot = plot_fit(
+       result, show_residuals=False, title="Customised linear fit",
+       xlabel="x", ylabel="Signal",
+   )
+   ax = plot.axes
+   handles, labels = ax.get_legend_handles_labels()
+   artists = dict(zip(labels, handles))
+
+   # The measurement handle contains the markers, caps and error bars.
+   markers, caps, bars = artists["Measurements"].lines
+   teal = "#00796b"
+   markers.set(marker="D", markerfacecolor="none", markeredgecolor=teal)
+   for cap in caps:
+       cap.set_markeredgecolor(teal)
+   for bar in bars:
+       bar.set_color(teal)
+
+   artists["fit: linear"].set(color="#c45100", linestyle="--", linewidth=2)
+   ax.spines["top"].set_visible(True)
+   ax.spines["right"].set_visible(True)
+   ax.legend(title="Linear fit", loc="upper left", frameon=True)
+   plot.save("plot_customisation.png")
+
+.. figure:: _static/gallery/plot_customisation.png
+   :alt: Open teal diamonds with error bars, a dashed orange fit line, and a framed legend in the upper left
+   :width: 100%
+
+   The same linear fit with open diamond markers, a dashed fit line, a
+   framed legend and visible top and right spines.
 
 .. _gallery-gaussian:
 
